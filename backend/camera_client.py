@@ -32,11 +32,14 @@ import argparse
 import base64
 import math
 import os
+import queue
 import sys
+import threading
 import time
 from collections import deque
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
 import cv2
@@ -87,11 +90,19 @@ API_USER     = os.getenv("API_USER", "")
 API_PASSWORD = os.getenv("API_PASSWORD", "")
 BOGOTA_TZ    = ZoneInfo("America/Bogota")
 
-# Ventanas horarias Colombia
+# Ventanas horarias Colombia.
+# - Entrada: 08:00–12:00 (esa franja "marca como entrada").
+# - Salida : 14:00 en adelante, sin tope superior, porque hay gente que se
+#            queda hasta tarde terminando trabajo. Practicamente cualquier
+#            evento despues de las 14:00 (y antes de la primera entrada del
+#            dia siguiente) cuenta como salida.
+# El servidor de todos modos decide entrada/salida segun los eventos
+# existentes del dia. Estas ventanas son solo etiqueta visual para el
+# operador.
 CHECKIN_START  = 8
 CHECKIN_END    = 12
 CHECKOUT_START = 14
-CHECKOUT_END   = 18
+CHECKOUT_END   = 24   # 24 = hasta medianoche
 
 # ── Detector / tracker ─────────────────────────────────────────────────────────
 DETECT_MIN_CONFIDENCE = 0.70   # MediaPipe — alto = casi cero falsos positivos
@@ -115,14 +126,18 @@ ENROLL_YAW_MAX        = 0.25   # asimetría máxima entre ojo izq/der respecto a
 
 # ── Asistencia ─────────────────────────────────────────────────────────────────
 COOLDOWN_S            = 30     # segundos entre registros del mismo empleado
-RECOGNITION_EVERY_S   = 1.2    # intervalo mínimo entre llamadas al servidor
+RECOGNITION_EVERY_S   = 0.8    # intervalo mínimo entre llamadas al servidor
 CONFIDENCE_MIN        = 0.55   # confianza mínima cliente (servidor ya filtra por distancia)
 ATTEND_TIMEOUT_S      = 20     # timeout HTTP para check-in
 ATTEND_BLUR_MIN       = 22.0   # nitidez mínima para enviar al servidor
 ATTEND_FACE_AREA_MIN  = 0.03   # 3% del frame
 ATTEND_EYE_DIST_MIN   = 28     # px
-VOTE_NEEDED           = 2      # reconocimientos consecutivos antes de registrar
-VOTE_WINDOW           = 3      # tamaño de la ventana de votación
+# Con 1, registramos en cuanto el primer match supera CONFIDENCE_MIN. Esto evita
+# que el usuario se quede 3-5s frente a la camara esperando a que pase el voto.
+# La proteccion contra falsos positivos sigue activa: threshold de distancia
+# en servidor + COOLDOWN_S de 30s por empleado + CONFIDENCE_MIN en cliente.
+VOTE_NEEDED           = 1
+VOTE_WINDOW           = 3
 
 # Colores BGR
 C_GREEN   = (0, 220, 80)
@@ -156,10 +171,35 @@ def face_area_ratio(fw: int, fh: int, frame_w: int, frame_h: int) -> float:
     return (fw * fh) / (frame_w * frame_h)
 
 
+def _downscale_for_detection(frame: np.ndarray, target_long_side: int) -> np.ndarray:
+    """
+    Reduce el frame para que el lado mayor sea `target_long_side`.
+
+    El detector facial (YuNet/MediaPipe) no necesita HD para una webcam:
+    a 480px de ancho corre 3-4x mas rapido en CPU y la calidad de deteccion
+    es practicamente la misma para rostros de tamano webcam (>=80px).
+
+    Si el frame ya es mas pequeno se devuelve sin tocar.
+    """
+    h, w = frame.shape[:2]
+    long_side = max(h, w)
+    if long_side <= target_long_side:
+        return frame
+    scale = target_long_side / float(long_side)
+    new_w = int(round(w * scale))
+    new_h = int(round(h * scale))
+    return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
+# CLAHE es relativamente costoso de instanciar. Lo creamos una sola vez y lo
+# reusamos en todos los frames (es thread-safe a nivel de uso secuencial dentro
+# del hilo principal). Reduce alocaciones y micro-latencia por frame.
+_CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
+
 def apply_clahe(gray: np.ndarray) -> np.ndarray:
     """Ecualización adaptativa de contraste (CLAHE) — normaliza iluminación."""
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    return clahe.apply(gray)
+    return _CLAHE.apply(gray)
 
 
 def align_face_by_eyes(
@@ -389,8 +429,12 @@ class MediaPipeFaceDetector:
         )
 
     def detect(self, frame_bgr: np.ndarray) -> list[Detection]:
+        # MediaPipe usa coordenadas relativas, asi que el downscale es
+        # transparente: las coords ya vienen normalizadas y se multiplican
+        # por (w, h) del frame original al final.
         h, w = frame_bgr.shape[:2]
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        small = _downscale_for_detection(frame_bgr, DETECT_TARGET_LONG_SIDE)
+        rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
         rgb.flags.writeable = False
 
         result = self._mp.process(rgb)
@@ -466,11 +510,18 @@ class YuNetFaceDetector:
     def detect(self, frame_bgr: np.ndarray) -> list[Detection]:
         h, w = frame_bgr.shape[:2]
 
-        if self._input_size != (w, h):
-            self._detector.setInputSize((w, h))
-            self._input_size = (w, h)
+        # Detectamos en un frame reducido y reescalamos las coords al original.
+        # YuNet devuelve coords absolutas, asi que aplicamos factor 1/scale.
+        small = _downscale_for_detection(frame_bgr, DETECT_TARGET_LONG_SIDE)
+        sh, sw = small.shape[:2]
+        scale_x = w / float(sw)
+        scale_y = h / float(sh)
 
-        _ok, faces = self._detector.detect(frame_bgr)
+        if self._input_size != (sw, sh):
+            self._detector.setInputSize((sw, sh))
+            self._input_size = (sw, sh)
+
+        _ok, faces = self._detector.detect(small)
 
         if faces is None or len(faces) == 0:
             return []
@@ -481,22 +532,29 @@ class YuNetFaceDetector:
             x, y, bw, bh = face[:4]
             score = float(face[14])
 
-            x = max(0, int(x))
-            y = max(0, int(y))
-            bw = min(w - x, int(bw))
-            bh = min(h - y, int(bh))
+            x = max(0, int(x * scale_x))
+            y = max(0, int(y * scale_y))
+            bw = min(w - x, int(bw * scale_x))
+            bh = min(h - y, int(bh * scale_y))
 
             if bw <= 0 or bh <= 0:
                 continue
 
-            # YuNet: right_eye, left_eye, nose, right_mouth, left_mouth
+            # YuNet: right_eye, left_eye, nose, right_mouth, left_mouth.
+            # Reescalamos cada landmark al sistema del frame original.
+            def sx(v: float) -> int:
+                return int(v * scale_x)
+
+            def sy(v: float) -> int:
+                return int(v * scale_y)
+
             landmarks = [
-                (int(face[4]), int(face[5])),
-                (int(face[6]), int(face[7])),
-                (int(face[8]), int(face[9])),
-                (int((face[10] + face[12]) / 2), int((face[11] + face[13]) / 2)),
-                (int(face[10]), int(face[11])),
-                (int(face[12]), int(face[13])),
+                (sx(face[4]),  sy(face[5])),
+                (sx(face[6]),  sy(face[7])),
+                (sx(face[8]),  sy(face[9])),
+                (sx((face[10] + face[12]) / 2), sy((face[11] + face[13]) / 2)),
+                (sx(face[10]), sy(face[11])),
+                (sx(face[12]), sy(face[13])),
             ]
 
             out.append(
@@ -654,18 +712,43 @@ class FaceTracker:
 # Camara
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Resolucion de captura. 960x540 es el sweet spot: suficiente para deteccion y
+# reconocimiento, pero ~2.7x menos pixeles que 1280x720 -> latencia mucho menor.
+CAPTURE_WIDTH  = 960
+CAPTURE_HEIGHT = 540
+CAPTURE_FPS    = 30
+
+# Lado mayor al que se reduce el frame solo para correr el detector. La deteccion
+# no necesita 960px de ancho para una cara webcam; con 480 es suficiente y
+# corre ~4x mas rapido en CPU. El bbox/landmarks se reescalan al frame original.
+DETECT_TARGET_LONG_SIDE = 480
+
+
 def open_camera(index: int = -1) -> cv2.VideoCapture:
     indices = [index] if index >= 0 else list(range(5))
     for i in indices:
-        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY)
+        # En Windows DSHOW es el backend mas estable para webcams USB/integradas.
+        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+        cap = cv2.VideoCapture(i, backend)
         if cap.isOpened():
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-            cap.set(cv2.CAP_PROP_FPS, 30)
-            # Buffer pequeno => menor latencia (sino los frames se acumulan)
+            # OJO con el orden: en muchos backends hay que fijar FOURCC ANTES
+            # que la resolucion para evitar el modo YUY2 default que limita a
+            # 10 FPS a 720p+ en webcams integradas (caso clasico Asus/HP/Lenovo).
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAPTURE_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAPTURE_HEIGHT)
+            cap.set(cv2.CAP_PROP_FPS, CAPTURE_FPS)
+            # Buffer pequeno => menor latencia.
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # Autofocus solo si la camara lo soporta (algunas integradas no).
             cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
-            print(f"[CAM] Camara abierta en indice {i}.")
+            actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            actual_fps = cap.get(cv2.CAP_PROP_FPS)
+            print(
+                f"[CAM] Abierta en indice {i} — "
+                f"{actual_w}x{actual_h} @ {actual_fps:.0f} FPS (MJPG)."
+            )
             return cap
         cap.release()
     raise RuntimeError(
@@ -959,6 +1042,172 @@ def run_enrollment(employee_id: str, auth: AuthSession, camera_index: int = -1) 
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# RecognitionWorker — desacopla la I/O del servidor del loop de render.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class RecognitionResult:
+    """Resultado producido por el worker para que el loop principal lo dibuje."""
+    status_code: int
+    payload: dict[str, Any] | None
+    error: str | None
+    submitted_at: float
+    received_at: float
+
+
+class RecognitionWorker:
+    """
+    Hilo en segundo plano que envia el frame al servidor de reconocimiento.
+
+    Diseno: la cola de entrada tiene capacidad 1 y politica "latest-wins".
+    Cuando el loop principal quiere enviar un nuevo frame y ya hay uno en vuelo,
+    NO espera: descarta el viejo (si aun no se procesa) y mete el nuevo. Esto
+    hace que el render no se bloquee NUNCA por la red ni por la inferencia
+    en el servidor — que es la razon principal por la que la camara iba a
+    "0-2 FPS" en el codigo anterior.
+
+    La cola de salida sirve para que el hilo principal recoja el resultado
+    cuando pueda, sin perder integridad.
+    """
+
+    def __init__(
+        self,
+        send_fn: Callable[[str], requests.Response],
+        timeout_s: float,
+    ) -> None:
+        self._send_fn = send_fn
+        self._timeout = timeout_s
+        # max=1: solo un frame pendiente. Si llega otro lo reemplazamos.
+        self._in_q: "queue.Queue[tuple[str, float] | None]" = queue.Queue(maxsize=1)
+        self._out_q: "queue.Queue[RecognitionResult]" = queue.Queue()
+        self._inflight = threading.Event()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name="RecognitionWorker", daemon=True
+        )
+
+    # ── API publica ──────────────────────────────────────────────────────────
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        try:
+            self._in_q.put_nowait(None)  # despierta el thread
+        except queue.Full:
+            pass
+        self._thread.join(timeout=2.0)
+
+    @property
+    def busy(self) -> bool:
+        """True si hay una peticion en vuelo (util para gating del loop)."""
+        return self._inflight.is_set()
+
+    def submit(self, image_b64: str) -> bool:
+        """
+        Intenta enviar un frame al worker. Si ya habia uno en cola sin procesar,
+        lo descarta (latest-wins). Devuelve True si se acepto, False si el
+        worker esta ocupado con una llamada en vuelo (el llamador debe esperar
+        al siguiente ciclo).
+        """
+        if self._inflight.is_set():
+            return False
+        # Limpia lo que haya pendiente (no procesado todavia) y mete el nuevo.
+        try:
+            self._in_q.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            self._in_q.put_nowait((image_b64, time.time()))
+            return True
+        except queue.Full:
+            return False
+
+    def poll(self) -> RecognitionResult | None:
+        """Devuelve el siguiente resultado si esta listo, o None."""
+        try:
+            return self._out_q.get_nowait()
+        except queue.Empty:
+            return None
+
+    # ── Loop interno ─────────────────────────────────────────────────────────
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                item = self._in_q.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            image_b64, submitted_at = item
+            self._inflight.set()
+            try:
+                resp = self._send_fn(image_b64)
+                payload: dict[str, Any] | None = None
+                # Intentamos json primero — caso normal con FastAPI.
+                try:
+                    payload = resp.json() if resp.content else None
+                except ValueError:
+                    payload = None
+                # Si no hay JSON y hay cuerpo (caso tipico de un 500 con HTML
+                # "Internal Server Error"), sintetizamos un payload con
+                # {"detail": "<primeras 200 chars del body>"} para que el
+                # diagnostico en cliente muestre algo util en vez de "HTTP 500".
+                if payload is None and resp.content:
+                    body_text = ""
+                    try:
+                        body_text = resp.text
+                    except Exception:  # noqa: BLE001
+                        body_text = ""
+                    if body_text:
+                        snippet = body_text.strip().replace("\n", " ")
+                        if len(snippet) > 200:
+                            snippet = snippet[:200] + "..."
+                        payload = {"detail": snippet}
+                self._out_q.put(
+                    RecognitionResult(
+                        status_code=resp.status_code,
+                        payload=payload,
+                        error=None,
+                        submitted_at=submitted_at,
+                        received_at=time.time(),
+                    )
+                )
+            except requests.exceptions.ReadTimeout:
+                self._out_q.put(
+                    RecognitionResult(
+                        status_code=0,
+                        payload=None,
+                        error="timeout",
+                        submitted_at=submitted_at,
+                        received_at=time.time(),
+                    )
+                )
+            except requests.exceptions.ConnectionError:
+                self._out_q.put(
+                    RecognitionResult(
+                        status_code=0,
+                        payload=None,
+                        error="connection",
+                        submitted_at=submitted_at,
+                        received_at=time.time(),
+                    )
+                )
+            except Exception as exc:  # pragma: no cover — red defensiva
+                self._out_q.put(
+                    RecognitionResult(
+                        status_code=0,
+                        payload=None,
+                        error=f"unexpected: {exc}",
+                        submitted_at=submitted_at,
+                        received_at=time.time(),
+                    )
+                )
+            finally:
+                self._inflight.clear()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Modo Asistencia
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -975,31 +1224,452 @@ def time_window() -> str:
     return "outside"
 
 
-def _draw_result_overlay(frame: np.ndarray, result: dict, h: int, w: int) -> None:
+def _draw_diag_panel(
+    frame: np.ndarray,
+    diag: dict,
+    h: int,
+    w: int,
+) -> None:
+    """
+    Panel inferior tipo verify: SIEMPRE muestra que esta haciendo el servidor.
+    No es una animacion — es informacion. Asi el operador nunca se queda sin
+    saber por que el sistema reconoce o por que no.
+    """
+    kind = diag.get("kind", "error")
+    latency = diag.get("latency_ms", 0.0)
+
+    if kind == "match":
+        bg_color   = (16, 38, 16)   # verde oscuro
+        title_color = C_GREEN
+        title = "RECONOCIDO"
+        line1 = f"{diag.get('full_name', '—')}  ({diag.get('code', '—')})"
+        line2 = (
+            f"Distancia: {diag.get('distance', 0.0):.4f}    "
+            f"Confianza: {diag.get('confidence', 0.0):.2%}    "
+            f"Latencia: {latency:.0f}ms"
+        )
+    elif kind == "no_match":
+        bg_color   = (38, 30, 16)   # ambar oscuro
+        title_color = C_ORANGE
+        title = "NO MATCH"
+        nearest = diag.get("nearest_name") or "—"
+        dist = diag.get("distance", 0.0)
+        if dist > 0:
+            line1 = f"Mas cercano: {nearest}    Distancia: {dist:.4f}"
+        else:
+            line1 = diag.get("msg", "Sin coincidencia") or "Sin coincidencia"
+        line2 = f"Latencia: {latency:.0f}ms"
+    elif kind == "conflict":
+        bg_color   = (38, 16, 30)
+        title_color = C_YELLOW
+        title = "YA REGISTRADO HOY"
+        line1 = diag.get("msg", "") or ""
+        line2 = f"Latencia: {latency:.0f}ms"
+    else:
+        bg_color   = (38, 16, 16)
+        title_color = C_RED
+        title = "ERROR"
+        line1 = diag.get("msg", "") or ""
+        line2 = f"Latencia: {latency:.0f}ms"
+
+    panel_h = 78
+    ov = frame.copy()
+    cv2.rectangle(ov, (0, h - panel_h), (w, h), bg_color, -1)
+    cv2.addWeighted(ov, 0.82, frame, 0.18, 0, frame)
+    cv2.line(frame, (0, h - panel_h), (w, h - panel_h), title_color, 2)
+
+    cv2.putText(frame, title, (16, h - panel_h + 26),
+                FONT_BOLD, 0.65, title_color, 1, cv2.LINE_AA)
+    if line1:
+        cv2.putText(frame, line1[:96], (16, h - panel_h + 50),
+                    FONT, 0.52, C_WHITE, 1, cv2.LINE_AA)
+    if line2:
+        cv2.putText(frame, line2[:96], (16, h - panel_h + 70),
+                    FONT, 0.46, C_GRAY, 1, cv2.LINE_AA)
+
+
+def _draw_big_check(
+    frame: np.ndarray,
+    center: tuple[int, int],
+    radius: int,
+    color: tuple,
+    thickness: int = 4,
+) -> None:
+    """Dibuja un circulo + un check (tipo material design) centrado en `center`."""
+    cv2.circle(frame, center, radius, color, thickness, cv2.LINE_AA)
+    cx, cy = center
+    # Trazos del check: dos lineas con un quiebre.
+    p1 = (cx - int(radius * 0.45), cy + int(radius * 0.05))
+    p2 = (cx - int(radius * 0.10), cy + int(radius * 0.40))
+    p3 = (cx + int(radius * 0.50), cy - int(radius * 0.35))
+    cv2.line(frame, p1, p2, color, thickness + 1, cv2.LINE_AA)
+    cv2.line(frame, p2, p3, color, thickness + 1, cv2.LINE_AA)
+
+
+def _draw_result_overlay(
+    frame: np.ndarray,
+    result: dict,
+    h: int,
+    w: int,
+    elapsed: float,
+    total: float,
+) -> None:
+    """
+    Overlay de resultado.
+
+    - `elapsed`/`total` permiten animar: flash inicial breve y luego fade-out.
+    - Para reconocimientos exitosos pintamos un check grande centrado +
+      panel inferior con nombre, codigo, confianza y hora.
+    - Para fallos un panel inferior compacto.
+    """
     if result.get("recognized"):
         event = result.get("event_type", "check_in")
-        color = C_GREEN if event == "check_in" else C_YELLOW
-        icon  = "ENTRADA" if event == "check_in" else "SALIDA"
+        is_checkin = event == "check_in"
+        color = C_GREEN if is_checkin else C_YELLOW
+        icon  = "ENTRADA REGISTRADA" if is_checkin else "SALIDA REGISTRADA"
         name  = result.get("full_name", "")
         code  = result.get("employee_code", "")
         conf  = result.get("confidence", 0.0)
+        hhmm  = result.get("event_time_str", "")
 
-        panel_h = 82
+        # ── Flash inicial (0.0 - 0.35s) sobre TODO el frame ─────────────────
+        # Pico de intensidad en t=0.10s, decae a 0 en t=0.35s.
+        flash_dur = 0.35
+        if elapsed < flash_dur:
+            t = elapsed / flash_dur
+            intensity = (1.0 - t) * 0.5  # 0.5 al inicio, 0 al final
+            flash = frame.copy()
+            flash[:] = color
+            cv2.addWeighted(flash, intensity, frame, 1.0 - intensity, 0, frame)
+
+        # ── Check grande centrado, con pulso decreciente ────────────────────
+        # Crece de 0.85 -> 1.10 del radio base en los primeros 0.4s.
+        base_r = min(h, w) // 5
+        if elapsed < 0.4:
+            scale = 0.85 + (elapsed / 0.4) * 0.25
+        else:
+            scale = 1.10
+        radius = max(40, int(base_r * scale))
+        center = (w // 2, h // 2 - 20)
+
+        # Sombra blanca para contraste sobre fondos claros u oscuros.
+        _draw_big_check(frame, center, radius + 3, C_WHITE, thickness=6)
+        _draw_big_check(frame, center, radius, color, thickness=5)
+
+        # Texto grande encima del check.
+        title_size, _ = cv2.getTextSize(icon, FONT_BOLD, 1.0, 2)
+        title_x = (w - title_size[0]) // 2
+        title_y = center[1] - radius - 24
+        # Sombra negra del texto para legibilidad.
+        cv2.putText(frame, icon, (title_x + 2, title_y + 2),
+                    FONT_BOLD, 1.0, C_BLACK, 3, cv2.LINE_AA)
+        cv2.putText(frame, icon, (title_x, title_y),
+                    FONT_BOLD, 1.0, color, 2, cv2.LINE_AA)
+
+        # Mensaje "PUEDES IRTE" debajo del check.
+        sub = "PUEDES IRTE" if not is_checkin else "BIENVENIDO"
+        sub_size, _ = cv2.getTextSize(sub, FONT_BOLD, 0.85, 2)
+        sub_x = (w - sub_size[0]) // 2
+        sub_y = center[1] + radius + 38
+        cv2.putText(frame, sub, (sub_x + 2, sub_y + 2),
+                    FONT_BOLD, 0.85, C_BLACK, 3, cv2.LINE_AA)
+        cv2.putText(frame, sub, (sub_x, sub_y),
+                    FONT_BOLD, 0.85, C_WHITE, 2, cv2.LINE_AA)
+
+        # ── Panel inferior con metadata ─────────────────────────────────────
+        panel_h = 92
         ov = frame.copy()
         cv2.rectangle(ov, (0, h - panel_h), (w, h), (18, 18, 18), -1)
-        cv2.addWeighted(ov, 0.8, frame, 0.2, 0, frame)
-        cv2.line(frame, (0, h - panel_h), (w, h - panel_h), color, 2)
+        cv2.addWeighted(ov, 0.82, frame, 0.18, 0, frame)
+        cv2.line(frame, (0, h - panel_h), (w, h - panel_h), color, 3)
 
-        cv2.putText(frame, icon, (16, h - panel_h + 30), FONT_BOLD, 0.9, color, 1, cv2.LINE_AA)
-        cv2.putText(frame, name, (120, h - panel_h + 28), FONT_BOLD, 0.7, C_WHITE, 1, cv2.LINE_AA)
-        cv2.putText(frame, f"Codigo: {code}", (120, h - panel_h + 52), FONT, 0.5, C_GRAY, 1, cv2.LINE_AA)
-        cv2.putText(frame, f"Confianza: {conf:.1%}", (w - 185, h - panel_h + 30), FONT, 0.5, color, 1, cv2.LINE_AA)
+        cv2.putText(frame, name, (20, h - panel_h + 34),
+                    FONT_BOLD, 0.75, C_WHITE, 1, cv2.LINE_AA)
+        cv2.putText(frame, f"Codigo: {code}", (20, h - panel_h + 62),
+                    FONT, 0.55, C_GRAY, 1, cv2.LINE_AA)
+        cv2.putText(frame, f"Confianza: {conf:.1%}", (20, h - panel_h + 82),
+                    FONT, 0.50, color, 1, cv2.LINE_AA)
+        if hhmm:
+            cv2.putText(frame, hhmm, (w - 180, h - panel_h + 38),
+                        FONT_BOLD, 0.85, color, 1, cv2.LINE_AA)
+
+        # ── Cuenta regresiva del overlay ────────────────────────────────────
+        remaining = max(0.0, total - elapsed)
+        bar_w = int((remaining / total) * (w - 40)) if total > 0 else 0
+        cv2.rectangle(frame, (20, h - 8), (20 + bar_w, h - 4), color, -1)
     else:
+        # Panel "no reconocido" — compacto y rojo, sin flash.
+        panel_h = 56
         ov = frame.copy()
-        cv2.rectangle(ov, (0, h - 48), (w, h), (20, 20, 40), -1)
-        cv2.addWeighted(ov, 0.8, frame, 0.2, 0, frame)
-        cv2.line(frame, (0, h - 48), (w, h - 48), C_RED, 2)
-        cv2.putText(frame, "Rostro no reconocido", (16, h - 16), FONT_BOLD, 0.65, C_RED, 1, cv2.LINE_AA)
+        cv2.rectangle(ov, (0, h - panel_h), (w, h), (24, 20, 38), -1)
+        cv2.addWeighted(ov, 0.82, frame, 0.18, 0, frame)
+        cv2.line(frame, (0, h - panel_h), (w, h - panel_h), C_RED, 2)
+        cv2.putText(frame, "Rostro no reconocido",
+                    (16, h - 22), FONT_BOLD, 0.7, C_RED, 1, cv2.LINE_AA)
+
+
+class FpsMeter:
+    """Promedio movil simple del tiempo entre frames -> FPS estable y barato."""
+
+    def __init__(self, window: int = 30) -> None:
+        self._times: deque[float] = deque(maxlen=window)
+        self._last: float | None = None
+
+    def tick(self) -> float:
+        now = time.time()
+        if self._last is not None:
+            self._times.append(now - self._last)
+        self._last = now
+        if not self._times:
+            return 0.0
+        avg = sum(self._times) / len(self._times)
+        return 1.0 / avg if avg > 0 else 0.0
+
+
+def _print_full_person(data: dict, latency_ms: float, hora: datetime) -> None:
+    """Imprime en consola TODOS los datos disponibles del registro."""
+    event = data.get("event_type", "check_in")
+    is_in = event == "check_in"
+    arrow = "→ ENTRADA REGISTRADA" if is_in else "← SALIDA REGISTRADA"
+
+    border = "=" * 72
+    print(f"\n{border}")
+    print(f"  {arrow}    [{hora.strftime('%Y-%m-%d %H:%M:%S')} America/Bogota]")
+    print(border)
+    # Identidad
+    print(f"  Nombre completo : {data.get('full_name') or '—'}")
+    print(f"  Codigo empleado : {data.get('employee_code') or '—'}")
+    print(f"  ID empleado     : {data.get('employee_id') or '—'}")
+    # Datos extra cuando el backend los incluye (ver schema enriquecido).
+    for label, key in (
+        ("Email           ", "email"),
+        ("Telefono        ", "phone"),
+        ("Departamento    ", "department"),
+        ("Cargo           ", "position"),
+        ("Estado          ", "status"),
+        ("Fecha ingreso   ", "hire_date"),
+    ):
+        if data.get(key) is not None:
+            print(f"  {label}: {data[key]}")
+    # Datos del evento.
+    print(f"  Tipo evento     : {event}")
+    if data.get("event_time"):
+        print(f"  Timestamp evento: {data['event_time']}")
+    if data.get("method"):
+        print(f"  Metodo          : {data['method']}")
+    print(f"  Confianza       : {(data.get('confidence') or 0.0):.2%}")
+    print(f"  Log id          : {data.get('id') or '—'}")
+    print(f"  Latencia red    : {latency_ms:.0f} ms")
+    print(f"{border}\n")
+
+
+@dataclass
+class AttendHandleResult:
+    """
+    Resultado del handler de una respuesta del servidor en modo attend.
+
+    - `overlay`: dict para `_draw_result_overlay` cuando hay registro confirmado.
+    - `overlay_total_s`, `overlay_until_ts`: duracion y deadline del overlay.
+    - `diag`: snapshot SIEMPRE poblado para el panel inferior tipo verify
+      (incluye distancia, confianza, nombre del mas cercano o del match,
+      mensaje crudo del servidor y status_code). Permite que el operador
+      vea en pantalla por que reconoce o por que no.
+    - `warn`: mensaje breve para overlay temporal (timeout/sin conexion).
+    """
+    overlay: dict | None
+    overlay_total_s: float
+    overlay_until_ts: float
+    diag: dict
+    warn: str | None
+
+
+def _conf_to_dist(conf: float | None) -> float:
+    """Convierte confianza (1 - dist/2) -> distancia coseno."""
+    if conf is None or conf <= 0:
+        return 0.0
+    return max(0.0, 2.0 * (1.0 - conf))
+
+
+def _handle_recognition_result(
+    res: RecognitionResult,
+    voter: ConsecutiveVoter,
+    last_per_emp: dict[str, float],
+    hora: datetime,
+) -> AttendHandleResult:
+    """Procesa un RecognitionResult del worker y prepara overlay + diagnostico."""
+    now_ts = time.time()
+    latency_ms = (res.received_at - res.submitted_at) * 1000.0
+
+    # ── Errores de red ───────────────────────────────────────────────────────
+    if res.error == "timeout":
+        return AttendHandleResult(
+            None, 0.0, 0.0,
+            {"kind": "error", "msg": "Servidor lento — timeout", "latency_ms": latency_ms},
+            "Servidor lento — timeout",
+        )
+    if res.error == "connection":
+        return AttendHandleResult(
+            None, 0.0, 0.0,
+            {"kind": "error", "msg": f"Sin conexion a {BASE_URL}",
+             "latency_ms": latency_ms},
+            f"Sin conexion a {BASE_URL}",
+        )
+    if res.error:
+        return AttendHandleResult(
+            None, 0.0, 0.0,
+            {"kind": "error", "msg": f"Error: {res.error}", "latency_ms": latency_ms},
+            f"Error: {res.error}",
+        )
+
+    sc = res.status_code
+    data = res.payload or {}
+    detail = data.get("detail") if isinstance(data, dict) else None
+
+    # ── Registro exitoso ─────────────────────────────────────────────────────
+    if sc in (200, 201):
+        emp_id     = str(data.get("employee_id", ""))
+        confidence = float(data.get("confidence") or 0.0)
+        full_name  = data.get("full_name") or "—"
+        code       = data.get("employee_code") or "—"
+        event      = data.get("event_type", "check_in")
+
+        diag = {
+            "kind": "match",
+            "full_name": full_name,
+            "code": code,
+            "confidence": confidence,
+            "distance": _conf_to_dist(confidence),
+            "event_type": event,
+            "latency_ms": latency_ms,
+            "msg": f"{event.upper()} -> {full_name} ({code})",
+        }
+        print(
+            f"[SRV {sc}] match {full_name} code={code} event={event} "
+            f"conf={confidence:.4f} dist~{_conf_to_dist(confidence):.4f} "
+            f"latency={latency_ms:.0f}ms"
+        )
+
+        if emp_id and confidence >= CONFIDENCE_MIN:
+            if voter.vote(emp_id):
+                cooldown_ok = (now_ts - last_per_emp.get(emp_id, 0)) >= COOLDOWN_S
+                if cooldown_ok:
+                    last_per_emp[emp_id] = now_ts
+                    voter.reset()
+                    _print_full_person(data, latency_ms, hora)
+                    _success_beep(is_checkin=(event == "check_in"))
+                    overlay_total = 5.5
+                    return AttendHandleResult(
+                        overlay={
+                            "recognized": True,
+                            "employee_id": emp_id,
+                            "full_name": full_name,
+                            "employee_code": code,
+                            "event_type": event,
+                            "confidence": confidence,
+                            "event_time_str": hora.strftime("%H:%M:%S"),
+                            "raw": data,
+                        },
+                        overlay_total_s=overlay_total,
+                        overlay_until_ts=now_ts + overlay_total,
+                        diag=diag,
+                        warn=None,
+                    )
+                else:
+                    diag["msg"] = (
+                        f"Cooldown ({COOLDOWN_S}s) — ya registrado recientemente"
+                    )
+        else:
+            voter.vote(None)
+        return AttendHandleResult(None, 0.0, 0.0, diag, None)
+
+    # ── 404 / 422 — no match. El servidor manda detalle con distancia. ──────
+    if sc in (404, 422):
+        voter.vote(None)
+        msg = detail or "Rostro no reconocido"
+        # Si el servidor ya nos da algo como
+        # "Nearest: <nombre> dist=0.6231 (threshold=0.55)" lo parseamos a campos.
+        nearest_name, nearest_dist = _parse_no_match_detail(msg)
+        print(f"[SRV {sc}] no-match  detail={msg!r}  latency={latency_ms:.0f}ms")
+        return AttendHandleResult(
+            overlay={"recognized": False},
+            overlay_total_s=1.6,
+            overlay_until_ts=now_ts + 1.6,
+            diag={
+                "kind": "no_match",
+                "msg": msg,
+                "nearest_name": nearest_name,
+                "distance": nearest_dist,
+                "latency_ms": latency_ms,
+            },
+            warn=None,
+        )
+
+    # ── 409 — ya completaste entrada y salida hoy ───────────────────────────
+    if sc == 409:
+        msg = detail or "Ya completo entrada y salida hoy"
+        print(f"[SRV 409] conflict detail={msg!r} latency={latency_ms:.0f}ms")
+        return AttendHandleResult(
+            overlay=None, overlay_total_s=0.0, overlay_until_ts=0.0,
+            diag={"kind": "conflict", "msg": msg, "latency_ms": latency_ms},
+            warn=msg,
+        )
+
+    # ── 503 — DeepFace no disponible en el servidor ─────────────────────────
+    if sc == 503:
+        msg = detail or "Servidor sin motor de reconocimiento"
+        print(f"[SRV 503] {msg}")
+        return AttendHandleResult(
+            overlay=None, overlay_total_s=0.0, overlay_until_ts=0.0,
+            diag={"kind": "error", "msg": msg, "latency_ms": latency_ms},
+            warn=msg,
+        )
+
+    # ── Cualquier otro ──────────────────────────────────────────────────────
+    msg = detail or f"HTTP {sc}"
+    print(f"[SRV {sc}] unhandled  detail={msg!r}  latency={latency_ms:.0f}ms")
+    return AttendHandleResult(
+        overlay=None, overlay_total_s=0.0, overlay_until_ts=0.0,
+        diag={"kind": "error", "msg": msg, "latency_ms": latency_ms},
+        warn=msg,
+    )
+
+
+def _parse_no_match_detail(text: str) -> tuple[str | None, float]:
+    """
+    Extrae nombre del mas cercano y distancia desde el detail del servidor.
+    Acepta formatos como:
+      'Nearest: Maria Fernanda Guzman Lugo dist=0.6231 (threshold=0.55)'
+    """
+    name: str | None = None
+    dist: float = 0.0
+    if "Nearest:" in text:
+        try:
+            rest = text.split("Nearest:", 1)[1].strip()
+            if "dist=" in rest:
+                name = rest.split("dist=", 1)[0].strip().rstrip(",").rstrip()
+                dist_str = rest.split("dist=", 1)[1].split(" ", 1)[0].strip()
+                dist = float(dist_str)
+        except (ValueError, IndexError):
+            pass
+    return name, dist
+
+
+def _success_beep(is_checkin: bool) -> None:
+    """Beep no bloqueante en Windows. Ignora en otros sistemas."""
+    if sys.platform != "win32":
+        return
+    try:
+        import winsound  # type: ignore  # noqa: PLC0415
+        # Frecuencia/duracion distintas para entrada y salida.
+        if is_checkin:
+            winsound.Beep(900, 90)
+            winsound.Beep(1200, 110)
+        else:
+            winsound.Beep(1200, 90)
+            winsound.Beep(700, 110)
+    except Exception:
+        # winsound no esta o el driver de sonido fallo. No es critico.
+        pass
 
 
 def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
@@ -1007,143 +1677,343 @@ def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
     detector = make_detector()
     tracker  = FaceTracker()
     voter    = ConsecutiveVoter(needed=VOTE_NEEDED, window=VOTE_WINDOW)
+    fps_meter = FpsMeter()
 
-    last_call_ts: float = 0.0
+    # Worker en hilo aparte: ninguna llamada HTTP bloquea el loop principal.
+    worker = RecognitionWorker(
+        send_fn=lambda b64: auth.post(
+            "/face/check-in", {"image_base64": b64}, timeout=ATTEND_TIMEOUT_S
+        ),
+        timeout_s=ATTEND_TIMEOUT_S,
+    )
+    worker.start()
+
+    last_submit_ts: float = 0.0
     last_per_emp: dict[str, float] = {}
-    last_result:  Optional[dict]  = None
+    last_result:  Optional[dict]   = None
+    result_started_at: float = 0.0  # cuando se mostro por primera vez
     result_until: float = 0.0
+    result_total_s: float = 0.0     # duracion total del overlay (para animacion)
+    transient_msg: Optional[str]   = None
+    transient_until: float = 0.0
+    # Snapshot de diagnostico — se actualiza con cada respuesta del servidor y se
+    # dibuja como panel inferior tipo verify para que NUNCA queden "muerto".
+    last_diag: dict | None = None
+    last_diag_until: float = 0.0
 
     print("\n[ATTEND] Modo asistencia activo. Presiona ESC para salir.\n")
 
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
 
-        frame  = cv2.flip(frame, 1)
-        fh, fw = frame.shape[:2]
-        now_ts = time.time()
-        hora   = now_bogota()
-        window = time_window()
+            frame  = cv2.flip(frame, 1)
+            fh, fw = frame.shape[:2]
+            now_ts = time.time()
+            hora   = now_bogota()
+            window = time_window()
+            fps    = fps_meter.tick()
 
-        detections = detector.detect(frame)
-        primary    = tracker.update(detections, frame.shape)
-        extras     = tracker.extra_faces
+            # 1) Drena resultados del worker (siempre primero — son baratos).
+            while True:
+                res = worker.poll()
+                if res is None:
+                    break
+                hr = _handle_recognition_result(res, voter, last_per_emp, hora)
+                if hr.overlay is not None:
+                    last_result        = hr.overlay
+                    result_started_at  = now_ts
+                    result_total_s     = hr.overlay_total_s
+                    result_until       = hr.overlay_until_ts
+                if hr.warn:
+                    transient_msg   = hr.warn
+                    transient_until = now_ts + 2.0
+                # Diagnostico persistente (panel inferior tipo verify).
+                last_diag        = hr.diag
+                last_diag_until  = now_ts + 4.0
 
-        q_ok, q_msg = _check_attend_quality(frame, primary)
+            # 2) Deteccion en frame reducido (el detector se encarga internamente).
+            detections = detector.detect(frame)
+            primary    = tracker.update(detections, frame.shape)
+            extras     = tracker.extra_faces
 
-        # ── Panel superior ─────────────────────────────────────────────────────
-        ov = frame.copy()
-        cv2.rectangle(ov, (0, 0), (fw, 60), (14, 14, 14), -1)
-        cv2.addWeighted(ov, 0.7, frame, 0.3, 0, frame)
-        cv2.putText(frame, "RollCall — Asistencia", (12, 24), FONT_BOLD, 0.65, C_WHITE, 1, cv2.LINE_AA)
-        cv2.putText(frame, hora.strftime("%d/%m/%Y  %H:%M:%S"), (12, 48), FONT, 0.48, C_GRAY, 1, cv2.LINE_AA)
+            q_ok, q_msg = _check_attend_quality(frame, primary)
 
-        win_text = {
-            "checkin":  "Ventana: ENTRADA (08:00-12:00)",
-            "checkout": "Ventana: SALIDA  (14:00-18:00)",
-            "outside":  "Fuera de horario laboral",
-        }[window]
-        win_color = {
-            "checkin": C_GREEN, "checkout": C_YELLOW, "outside": C_RED,
-        }[window]
-        put_text_bg(frame, win_text, (fw - 315, 22), fg=win_color, bg=(14, 14, 14))
+            # ── Panel superior ───────────────────────────────────────────────
+            ov = frame.copy()
+            cv2.rectangle(ov, (0, 0), (fw, 60), (14, 14, 14), -1)
+            cv2.addWeighted(ov, 0.7, frame, 0.3, 0, frame)
+            cv2.putText(
+                frame, "RollCall — Asistencia",
+                (12, 24), FONT_BOLD, 0.65, C_WHITE, 1, cv2.LINE_AA,
+            )
+            cv2.putText(
+                frame, hora.strftime("%d/%m/%Y  %H:%M:%S"),
+                (12, 48), FONT, 0.48, C_GRAY, 1, cv2.LINE_AA,
+            )
 
-        # ── Rostro principal + landmarks ───────────────────────────────────────
-        if primary is not None:
-            x, y, w, h = primary["bbox"]
-            color = C_GREEN if q_ok else C_BLUE
-            draw_rounded_rect(frame, (x, y), (x + w, y + h), color, 2)
-            draw_landmarks(frame, primary["landmarks"], color=color)
-            if extras > 0:
-                put_text_bg(
-                    frame,
-                    f"{extras} rostro(s) ignorado(s) — solo se procesa el principal",
-                    (12, fh - 48), fg=C_YELLOW,
+            win_text = {
+                "checkin":  "Ventana: ENTRADA (08:00-12:00)",
+                "checkout": "Ventana: SALIDA  (14:00 en adelante)",
+                "outside":  "Fuera de horario laboral",
+            }[window]
+            win_color = {
+                "checkin": C_GREEN, "checkout": C_YELLOW, "outside": C_RED,
+            }[window]
+            put_text_bg(frame, win_text, (fw - 315, 22), fg=win_color, bg=(14, 14, 14))
+
+            # FPS + estado del worker (esquina inferior derecha).
+            status = "RX" if worker.busy else "OK"
+            fps_color = C_GREEN if fps >= 15 else (C_YELLOW if fps >= 8 else C_RED)
+            put_text_bg(
+                frame, f"{fps:4.1f} FPS  [{status}]",
+                (fw - 140, fh - 12), font_scale=0.45, fg=fps_color, bg=C_BLACK,
+            )
+
+            # ── Rostro principal + landmarks ─────────────────────────────────
+            if primary is not None:
+                x, y, w, h = primary["bbox"]
+                color = C_GREEN if q_ok else C_BLUE
+                draw_rounded_rect(frame, (x, y), (x + w, y + h), color, 2)
+                draw_landmarks(frame, primary["landmarks"], color=color)
+                if extras > 0:
+                    put_text_bg(
+                        frame,
+                        f"{extras} rostro(s) ignorado(s) — solo se procesa el principal",
+                        (12, fh - 48), fg=C_YELLOW,
+                    )
+
+            # ── Overlay resultado ────────────────────────────────────────────
+            if last_result and now_ts < result_until:
+                elapsed = now_ts - result_started_at
+                _draw_result_overlay(
+                    frame, last_result, fh, fw,
+                    elapsed=elapsed, total=result_total_s,
                 )
 
-        # ── Overlay resultado ──────────────────────────────────────────────────
-        if last_result and now_ts < result_until:
-            _draw_result_overlay(frame, last_result, fh, fw)
-
-        # ── Reconocimiento ─────────────────────────────────────────────────────
-        can_call = q_ok and (now_ts - last_call_ts) >= RECOGNITION_EVERY_S and primary is not None
-
-        if can_call:
-            last_call_ts = now_ts
-            face_crop = align_face_by_eyes(
-                frame, primary["bbox"], primary["landmarks"],
-                pad=0.40, out_size=256,
+            # ── Submit al worker — NO bloqueante ─────────────────────────────
+            can_submit = (
+                q_ok
+                and primary is not None
+                and not worker.busy
+                and (now_ts - last_submit_ts) >= RECOGNITION_EVERY_S
             )
-            face_proc = preprocess_for_recognition(face_crop)
-            b64       = encode_frame(face_proc, quality=90)
 
-            try:
-                resp = auth.post("/face/check-in", {"image_base64": b64}, timeout=ATTEND_TIMEOUT_S)
+            if can_submit:
+                # IMPORTANTE: el pipeline AQUI debe ser IDENTICO al de enroll
+                # (align_face_by_eyes con pad=0.40, out_size=256, sin CLAHE).
+                # Si aplicas CLAHE solo en attend, el embedding ArcFace queda
+                # desplazado ~0.1-0.2 en distancia coseno vs los enrolados ->
+                # rechazo sistematico aunque sea la misma persona. ArcFace fue
+                # entrenado sobre crops sin ecualizacion adaptativa de canal.
+                face_crop = align_face_by_eyes(
+                    frame, primary["bbox"], primary["landmarks"],
+                    pad=0.40, out_size=256,
+                )
+                b64 = encode_frame(face_crop, quality=90)
+                if worker.submit(b64):
+                    last_submit_ts = now_ts
+            elif primary is None:
+                voter.vote(None)
+                if not (last_result and now_ts < result_until):
+                    put_text_bg(frame, "Sin rostro detectado", (20, fh - 18), fg=C_GRAY)
+            elif not q_ok and q_msg:
+                put_text_bg(frame, q_msg, (20, fh - 18), fg=C_ORANGE)
 
-                if resp.status_code in (200, 201):
-                    data       = resp.json()
-                    emp_id     = str(data.get("employee_id", ""))
-                    confidence = data.get("confidence") or 0.0
-                    full_name  = data.get("full_name") or "—"
-                    code       = data.get("employee_code") or "—"
-                    event      = data.get("event_type", "check_in")
+            # Panel de diagnostico persistente (igual filosofia que verify) —
+            # SOLO cuando NO esta activo el overlay de exito (para que el
+            # check-mark y "PUEDES IRTE" se vean limpios).
+            no_success_overlay = not (last_result and now_ts < result_until
+                                       and last_result.get("recognized"))
+            if (
+                no_success_overlay
+                and last_diag
+                and now_ts < last_diag_until
+            ):
+                _draw_diag_panel(frame, last_diag, fh, fw)
 
-                    # /check-in solo responde 201 cuando hubo reconocimiento;
-                    # filtramos adicionalmente por confianza minima del cliente.
-                    if emp_id and confidence >= CONFIDENCE_MIN:
-                        consensus = voter.vote(emp_id)
-                        pending_result = {
-                            "recognized": True,
-                            "employee_id": emp_id,
-                            "full_name": full_name,
-                            "employee_code": code,
-                            "event_type": event,
-                            "confidence": confidence,
-                        }
+            # Mensaje transitorio (timeout/connection error).
+            if transient_msg and now_ts < transient_until:
+                put_text_bg(frame, transient_msg, (20, fh - 70), fg=C_ORANGE)
 
-                        if consensus:
-                            cooldown_ok = (now_ts - last_per_emp.get(emp_id, 0)) >= COOLDOWN_S
-                            if cooldown_ok:
-                                last_per_emp[emp_id] = now_ts
-                                last_result  = pending_result
-                                result_until = now_ts + 5.0
-                                voter.reset()
-                                icon = "→ ENTRADA" if event == "check_in" else "← SALIDA"
-                                print(
-                                    f"[{hora.strftime('%H:%M:%S')}] {icon}  "
-                                    f"{full_name}  cod:{code}  "
-                                    f"confianza:{confidence:.1%}"
-                                )
-                    else:
-                        voter.vote(None)
+            cv2.imshow("RollCall — Asistencia", frame)
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
+    finally:
+        worker.stop()
+        cap.release()
+        cv2.destroyAllWindows()
+        print("\n[ATTEND] Sesion cerrada.")
 
-                elif resp.status_code in (404, 422):
-                    voter.vote(None)
-                    last_result  = {"recognized": False}
-                    result_until = now_ts + 1.5
 
-                elif resp.status_code == 503:
-                    put_text_bg(frame, "Servidor sin DeepFace", (20, fh - 20), fg=C_RED)
+# ══════════════════════════════════════════════════════════════════════════════
+# Modo Verify — diagnostico, no marca asistencia
+# ══════════════════════════════════════════════════════════════════════════════
 
-            except requests.exceptions.ReadTimeout:
-                put_text_bg(frame, "Servidor lento — timeout", (20, fh - 20), fg=C_ORANGE)
-            except requests.exceptions.ConnectionError:
-                put_text_bg(frame, f"Sin conexion a {BASE_URL}", (20, fh - 20), fg=C_RED)
+def run_verify(auth: AuthSession, camera_index: int = -1) -> None:
+    """
+    Modo diagnostico. Envia el frame a /face/verify (no marca asistencia) y
+    muestra en pantalla la distancia coseno al empleado mas cercano, su nombre
+    y la confianza. Sirve para calibrar el threshold visualmente:
 
-        elif primary is None:
-            voter.vote(None)
-            put_text_bg(frame, "Sin rostro detectado", (20, fh - 18), fg=C_GRAY)
-        elif not q_ok and q_msg:
-            put_text_bg(frame, q_msg, (20, fh - 18), fg=C_ORANGE)
+      - Posicionate enfrente de la camara con luz/angulo normales.
+      - Si tu cara aparece reconocida con dist ~0.40-0.55, el threshold actual
+        de 0.55 esta bien.
+      - Si dist sale > 0.55 con tu cara real, el threshold esta muy estricto o
+        falto enrollment con mas variedad de luces/angulos.
+      - Si una persona DISTINTA aparece reconocida con dist < threshold,
+        el threshold esta muy permisivo (riesgo de falsos positivos).
+    """
+    cap = open_camera(camera_index)
+    detector = make_detector()
+    tracker  = FaceTracker()
+    fps_meter = FpsMeter()
 
-        cv2.imshow("RollCall — Asistencia", frame)
-        if cv2.waitKey(1) & 0xFF == 27:
-            break
+    worker = RecognitionWorker(
+        send_fn=lambda b64: auth.post(
+            "/face/verify", {"image_base64": b64}, timeout=ATTEND_TIMEOUT_S
+        ),
+        timeout_s=ATTEND_TIMEOUT_S,
+    )
+    worker.start()
 
-    cap.release()
-    cv2.destroyAllWindows()
-    print("\n[ATTEND] Sesion cerrada.")
+    last_submit_ts: float = 0.0
+    last_payload: dict[str, Any] | None = None
+    last_payload_until: float = 0.0
+    last_latency_ms: float = 0.0
+
+    print("\n[VERIFY] Modo diagnostico. ESC para salir.\n")
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+
+            frame  = cv2.flip(frame, 1)
+            fh, fw = frame.shape[:2]
+            now_ts = time.time()
+            fps    = fps_meter.tick()
+
+            # Drena resultados.
+            while True:
+                res = worker.poll()
+                if res is None:
+                    break
+                last_latency_ms = (res.received_at - res.submitted_at) * 1000.0
+                if res.error:
+                    last_payload = {"error": res.error}
+                else:
+                    last_payload = res.payload or {}
+                last_payload_until = now_ts + 3.0
+
+            detections = detector.detect(frame)
+            primary    = tracker.update(detections, frame.shape)
+            q_ok, q_msg = _check_attend_quality(frame, primary)
+
+            # Panel superior.
+            ov = frame.copy()
+            cv2.rectangle(ov, (0, 0), (fw, 60), (14, 14, 14), -1)
+            cv2.addWeighted(ov, 0.7, frame, 0.3, 0, frame)
+            cv2.putText(
+                frame, "RollCall — Verify (diagnostico)",
+                (12, 26), FONT_BOLD, 0.65, C_CYAN, 1, cv2.LINE_AA,
+            )
+            cv2.putText(
+                frame, "No marca asistencia. Calibracion de threshold.",
+                (12, 48), FONT, 0.46, C_GRAY, 1, cv2.LINE_AA,
+            )
+
+            # FPS + estado del worker.
+            status = "RX" if worker.busy else "OK"
+            fps_color = C_GREEN if fps >= 15 else (C_YELLOW if fps >= 8 else C_RED)
+            put_text_bg(
+                frame, f"{fps:4.1f} FPS  [{status}]  {last_latency_ms:.0f}ms",
+                (fw - 230, fh - 12), font_scale=0.45, fg=fps_color, bg=C_BLACK,
+            )
+
+            if primary is not None:
+                x, y, w, h = primary["bbox"]
+                color = C_GREEN if q_ok else C_BLUE
+                draw_rounded_rect(frame, (x, y), (x + w, y + h), color, 2)
+                draw_landmarks(frame, primary["landmarks"], color=color)
+
+            # Submit.
+            can_submit = (
+                q_ok
+                and primary is not None
+                and not worker.busy
+                and (now_ts - last_submit_ts) >= RECOGNITION_EVERY_S
+            )
+            if can_submit:
+                face_crop = align_face_by_eyes(
+                    frame, primary["bbox"], primary["landmarks"],
+                    pad=0.40, out_size=256,
+                )
+                b64 = encode_frame(face_crop, quality=90)
+                if worker.submit(b64):
+                    last_submit_ts = now_ts
+            elif primary is None:
+                put_text_bg(frame, "Sin rostro detectado", (20, fh - 18), fg=C_GRAY)
+            elif not q_ok and q_msg:
+                put_text_bg(frame, q_msg, (20, fh - 18), fg=C_ORANGE)
+
+            # Overlay de diagnostico.
+            if last_payload and now_ts < last_payload_until:
+                panel_h = 88
+                p = frame.copy()
+                cv2.rectangle(p, (0, fh - panel_h), (fw, fh), (16, 16, 16), -1)
+                cv2.addWeighted(p, 0.85, frame, 0.15, 0, frame)
+
+                if "error" in last_payload:
+                    cv2.putText(
+                        frame, f"ERROR: {last_payload['error']}",
+                        (16, fh - panel_h + 30),
+                        FONT_BOLD, 0.6, C_RED, 1, cv2.LINE_AA,
+                    )
+                else:
+                    recognized = bool(last_payload.get("recognized"))
+                    name = last_payload.get("full_name") or "—"
+                    conf = float(last_payload.get("confidence") or 0.0)
+                    msg  = last_payload.get("message") or ""
+                    # dist = 2*(1-conf) si tenemos conf, util como referencia
+                    dist = max(0.0, 2.0 * (1.0 - conf)) if conf > 0 else 0.0
+
+                    title_color = C_GREEN if recognized else C_ORANGE
+                    title = "MATCH" if recognized else "SIN MATCH"
+                    cv2.putText(
+                        frame, title, (16, fh - panel_h + 28),
+                        FONT_BOLD, 0.7, title_color, 1, cv2.LINE_AA,
+                    )
+                    cv2.putText(
+                        frame, f"Nombre: {name}",
+                        (16, fh - panel_h + 52),
+                        FONT, 0.5, C_WHITE, 1, cv2.LINE_AA,
+                    )
+                    cv2.putText(
+                        frame,
+                        f"Distancia: {dist:.4f}    Confianza: {conf:.2%}",
+                        (16, fh - panel_h + 74),
+                        FONT, 0.5, C_CYAN, 1, cv2.LINE_AA,
+                    )
+                    # Mensaje del backend (incluye top votos cuando hay match).
+                    if msg:
+                        put_text_bg(
+                            frame, msg[:80],
+                            (fw - 460 if len(msg) > 40 else fw - 260, fh - panel_h + 28),
+                            font_scale=0.42, fg=C_GRAY, bg=C_BLACK,
+                        )
+
+            cv2.imshow("RollCall — Verify", frame)
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
+    finally:
+        worker.stop()
+        cap.release()
+        cv2.destroyAllWindows()
+        print("\n[VERIFY] Sesion cerrada.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1168,9 +2038,10 @@ def main() -> None:
             "  python camera_client.py enroll 550e8400-e29b-41d4-a716-446655440000\n"
             "  python camera_client.py attend\n"
             "  python camera_client.py attend --camera 1\n"
+            "  python camera_client.py verify   # diagnostico, no marca asistencia\n"
         ),
     )
-    parser.add_argument("mode", choices=["enroll", "attend"])
+    parser.add_argument("mode", choices=["enroll", "attend", "verify"])
     parser.add_argument("employee_id", nargs="?")
     parser.add_argument("--camera", type=int, default=-1)
     args = parser.parse_args()
@@ -1193,6 +2064,8 @@ def main() -> None:
     try:
         if args.mode == "enroll":
             run_enrollment(args.employee_id, auth, args.camera)
+        elif args.mode == "verify":
+            run_verify(auth, args.camera)
         else:
             run_attendance(auth, args.camera)
     except RuntimeError as e:

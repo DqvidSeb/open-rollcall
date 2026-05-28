@@ -23,15 +23,28 @@ class AttendanceService:
 
     async def record_from_recognition(self, verify_result: FaceVerifyResponse,
                                        snapshot_url: str | None = None) -> AttendanceLog:
+        # Si el motor de reconocimiento no encontro match, propagamos al cliente
+        # el mismo `message` que produjo verify (incluye distancia y nombre del
+        # mas cercano). Esto reemplaza el genérico "unrecognized person" por
+        # algo accionable: "Nearest: Maria Fernanda dist=0.6231 (threshold=0.55)".
         if not verify_result.recognized or not verify_result.employee_id:
-            raise HTTPException(status_code=422, detail="Cannot record attendance for unrecognized person")
+            detail = verify_result.message or "Cannot record attendance for unrecognized person"
+            raise HTTPException(status_code=422, detail=detail)
 
         eid = verify_result.employee_id
         existing_in = await self.att_repo.get_today_event(eid, EventType.CHECK_IN)
         existing_out = await self.att_repo.get_today_event(eid, EventType.CHECK_OUT)
 
         if existing_in and existing_out:
-            raise HTTPException(status_code=409, detail="Already completed check-in and check-out today")
+            # 409 con detalle claro y hora del ultimo check para diagnostico.
+            last = existing_out.event_time.isoformat() if existing_out.event_time else ""
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Ya completo entrada y salida hoy. "
+                    f"Ultimo evento registrado: {last}"
+                ),
+            )
 
         log = AttendanceLog(
             employee_id=eid,
