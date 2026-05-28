@@ -1,0 +1,57 @@
+# Entornos y secretos
+.env
+.env.*
+*.pem
+*.key
+*.cert
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.npm/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+
+# Type checking
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+# docker-compose.override.yml
+
+# DeepFace model weights
+.deepface/
+backend/.deepface/
+
+# Logs
+*.log
+logs/
+
+# Uploads / snapshots (generados en runtime)
+uploads/
+snapshots/

@@ -1,0 +1,27 @@
+"""
+Exporta todos los modelos para que Alembic los detecte automáticamente.
+El orden de importación respeta las dependencias FK.
+"""
+
+from app.models.base import Base
+from app.models.person import Person
+from app.models.user import User
+from app.models.department import Department
+from app.models.position import Position
+from app.models.employee import Employee, EmployeeStatus
+from app.models.face_encoding import FaceEncoding
+from app.models.attendance_log import AttendanceLog, EventType, AttendanceMethod
+
+__all__ = [
+    "Base",
+    "Person",
+    "User",
+    "Department",
+    "Position",
+    "Employee",
+    "EmployeeStatus",
+    "FaceEncoding",
+    "AttendanceLog",
+    "EventType",
+    "AttendanceMethod",
+]
