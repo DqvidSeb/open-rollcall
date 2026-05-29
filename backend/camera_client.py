@@ -1920,6 +1920,26 @@ def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
 # Modo Verify — diagnostico, no marca asistencia
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _print_verify_match(data: dict, latency_ms: float) -> None:
+    """Imprime en consola los datos del empleado reconocido en modo verify."""
+    border = "=" * 72
+    now = datetime.now(SCHEDULE_TZ)
+    conf = float(data.get("confidence") or 0.0)
+    dist = max(0.0, 2.0 * (1.0 - conf))
+    print(f"\n{border}")
+    print(f"  VERIFY — MATCH    [{now.strftime('%Y-%m-%d %H:%M:%S')} {_SCHEDULE_TZ_STR}]")
+    print(border)
+    print(f"  Nombre completo : {data.get('full_name') or '—'}")
+    print(f"  Codigo empleado : {data.get('employee_code') or '—'}")
+    print(f"  ID empleado     : {data.get('employee_id') or '—'}")
+    print(f"  Confianza       : {conf:.2%}")
+    print(f"  Distancia coseno: {dist:.4f}")
+    if data.get("message"):
+        print(f"  Mensaje servidor: {data['message']}")
+    print(f"  Latencia red    : {latency_ms:.0f} ms")
+    print(f"{border}\n")
+
+
 def run_verify(auth: AuthSession, camera_index: int = -1) -> None:
     """
     Modo diagnostico. Envia el frame a /face/verify (no marca asistencia) y
@@ -1975,6 +1995,8 @@ def run_verify(auth: AuthSession, camera_index: int = -1) -> None:
                     last_payload = {"error": res.error}
                 else:
                     last_payload = res.payload or {}
+                    if last_payload.get("recognized"):
+                        _print_verify_match(last_payload, last_latency_ms)
                 last_payload_until = now_ts + 3.0
 
             detections = detector.detect(frame)
