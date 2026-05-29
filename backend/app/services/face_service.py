@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import math
 import uuid
 
 from fastapi import HTTPException, status
@@ -154,6 +155,20 @@ class FaceService:
             return FaceVerifyResponse(
                 recognized=False,
                 message=f"Embedding dim {len(emb)} != 512. Modelo mal configurado.",
+            )
+
+        # Validacion NaN/Inf: pgvector no lanza error con vectores NaN pero
+        # devuelve 0 filas silenciosamente. Detectamos esto antes de la query
+        # para dar un mensaje util al operador.
+        bad_values = [v for v in emb if not math.isfinite(v)]
+        if bad_values:
+            logger.error(
+                "verify: embedding contains %d NaN/Inf values — frame descartado",
+                len(bad_values),
+            )
+            return FaceVerifyResponse(
+                recognized=False,
+                message="Frame descartado: embedding invalido (NaN/Inf). Intenta de nuevo.",
             )
 
         # Conteo total como ground truth. Esto distingue "tabla vacia" de

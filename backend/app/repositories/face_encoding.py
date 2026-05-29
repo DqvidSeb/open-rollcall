@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import select, text
+from sqlalchemy import select
 from app.models.face_encoding import FaceEncoding
 from app.repositories.base import BaseRepository
 
@@ -32,51 +32,29 @@ class FaceEncodingRepository(BaseRepository[FaceEncoding]):
         """
         Búsqueda de los k vecinos más cercanos por distancia coseno (pgvector `<=>`).
 
-        Cambios respecto a la versión anterior:
-        - El filtro por threshold es opcional. Cuando es `None` devolvemos los
-          top_k absolutos, para que la capa superior pueda reportar la
-          distancia real incluso cuando no haya match (clave para diagnostico).
-        - `top_k` por defecto es 10, no 5. Si un empleado tiene 5 muestras
-          enroladas y traemos solo 5 vecinos, podemos quedarnos sin "ver" otras
-          personas y perder informacion para el voto por empleado en la capa de
-          servicio.
-        - Se castea explicitamente el `top_k` a `int` para evitar el corner case
-          donde llegue como `numpy.int64` y SQLAlchemy lo rechace.
+        Usa FaceEncoding.embedding.cosine_distance() del comparator de pgvector,
+        que invoca el bind_processor correcto (Vector._to_db) para convertir la
+        lista de floats al formato de pgvector via protocolo binario de asyncpg.
+
+        Esto reemplaza la versión anterior que construía el vector como string
+        manual ("CAST(:query AS vector)") y sufría de:
+          - 0 filas intermitentes por conflictos en el prepared-statement cache
+            de asyncpg al reutilizar el statement con parámetros text muy largos.
+          - N+1 queries (1 text query + 1 db.get() por fila resultado).
+
+        Ahora se obtienen los objetos ORM directamente en una sola query.
         """
-        query_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+        cos_dist = FaceEncoding.embedding.cosine_distance(
+            query_embedding
+        ).label("distance")
 
-        if distance_threshold is None:
-            stmt = text(
-                """
-                SELECT fe.id,
-                       fe.embedding <=> CAST(:query AS vector) AS distance
-                FROM face_encoding fe
-                ORDER BY distance ASC
-                LIMIT :top_k
-                """
-            )
-            params = {"query": query_str, "top_k": int(top_k)}
-        else:
-            stmt = text(
-                """
-                SELECT fe.id,
-                       fe.embedding <=> CAST(:query AS vector) AS distance
-                FROM face_encoding fe
-                WHERE fe.embedding <=> CAST(:query AS vector) < :threshold
-                ORDER BY distance ASC
-                LIMIT :top_k
-                """
-            )
-            params = {
-                "query": query_str,
-                "threshold": float(distance_threshold),
-                "top_k": int(top_k),
-            }
+        stmt = (
+            select(FaceEncoding, cos_dist)
+            .order_by(cos_dist)
+            .limit(int(top_k))
+        )
+        if distance_threshold is not None:
+            stmt = stmt.where(cos_dist < float(distance_threshold))
 
-        rows = await self.db.execute(stmt, params)
-        out: list[tuple[FaceEncoding, float]] = []
-        for row in rows.fetchall():
-            enc = await self.db.get(FaceEncoding, row.id)
-            if enc:
-                out.append((enc, float(row.distance)))
-        return out
+        result = await self.db.execute(stmt)
+        return [(enc, float(dist)) for enc, dist in result.all()]

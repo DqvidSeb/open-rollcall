@@ -4,6 +4,7 @@ Punto de entrada de la aplicación FastAPI.
 Registra middlewares, routers, handlers de errores y eventos de lifespan.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -25,11 +26,33 @@ logger = logging.getLogger(__name__)
 
 # ── Lifespan (startup / shutdown) ────────────────────────────────────────────
 
+async def _warmup_deepface() -> None:
+    """
+    Pre-carga el modelo ArcFace de DeepFace durante el startup del servidor.
+
+    Sin esto, el primer request de reconocimiento incurre en ~20 segundos de
+    latencia mientras TensorFlow inicializa los pesos del modelo. Con este
+    warm-up el modelo queda listo antes de que llegue cualquier request.
+
+    Se ejecuta en un thread para no bloquear el event loop de asyncio.
+    """
+    import os
+    os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+    try:
+        from deepface import DeepFace  # noqa: PLC0415
+        logger.info("⏳ Pre-cargando modelo DeepFace '%s'...", settings.FACE_MODEL_NAME)
+        await asyncio.to_thread(DeepFace.build_model, settings.FACE_MODEL_NAME)
+        logger.info("✅ Modelo DeepFace '%s' listo", settings.FACE_MODEL_NAME)
+    except Exception as exc:
+        # No-fatal: si falla el warm-up el servidor igual arranca;
+        # el primer request tendrá latencia alta pero no fallará.
+        logger.warning("⚠️  DeepFace warm-up no disponible (no-fatal): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 RollCall API starting — environment: %s", settings.ENVIRONMENT)
-    # Aquí puedes pre-cargar el modelo de DeepFace en caché para que
-    # el primer reconocimiento no tenga latencia de carga.
+    await _warmup_deepface()
     yield
     logger.info("🛑 RollCall API shutting down")
 

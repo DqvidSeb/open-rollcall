@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RollCall — Cliente de Cámara
+RollCall - Cliente de Cámara
 ============================
 Modo enrollar  : python camera_client.py enroll <employee_id>
 Modo asistencia: python camera_client.py attend [--camera INDEX]
@@ -126,7 +126,7 @@ ENROLL_YAW_MAX        = 0.25   # asimetría máxima entre ojo izq/der respecto a
 
 # ── Asistencia ─────────────────────────────────────────────────────────────────
 COOLDOWN_S            = 30     # segundos entre registros del mismo empleado
-RECOGNITION_EVERY_S   = 0.8    # intervalo mínimo entre llamadas al servidor
+RECOGNITION_EVERY_S   = 2.5    # intervalo mínimo entre llamadas al servidor
 CONFIDENCE_MIN        = 0.55   # confianza mínima cliente (servidor ya filtra por distancia)
 ATTEND_TIMEOUT_S      = 20     # timeout HTTP para check-in
 ATTEND_BLUR_MIN       = 22.0   # nitidez mínima para enviar al servidor
@@ -988,7 +988,7 @@ def run_enrollment(employee_id: str, auth: AuthSession, camera_index: int = -1) 
                         (nw, _), _ = cv2.getTextSize(next_guide, FONT, 0.52, 1)
                         cv2.putText(cf, next_guide, ((cfw - nw) // 2, cfh // 2 + 38), FONT, 0.52, C_WHITE, 1, cv2.LINE_AA)
 
-                    cv2.imshow("RollCall — Enrollment", cf)
+                    cv2.imshow("RollCall - Enrollment", cf)
                     if cv2.waitKey(1) & 0xFF == 27:
                         cap.release()
                         cv2.destroyAllWindows()
@@ -1004,7 +1004,7 @@ def run_enrollment(employee_id: str, auth: AuthSession, camera_index: int = -1) 
             color = C_ORANGE if primary is not None else C_GRAY
             put_text_bg(frame, q_msg, (20, fh - 18), fg=color)
 
-        cv2.imshow("RollCall — Enrollment", frame)
+        cv2.imshow("RollCall - Enrollment", frame)
         key = cv2.waitKey(1) & 0xFF
         if key == 27:
             print("[ENROLL] Cancelado.")
@@ -1746,7 +1746,7 @@ def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
             cv2.rectangle(ov, (0, 0), (fw, 60), (14, 14, 14), -1)
             cv2.addWeighted(ov, 0.7, frame, 0.3, 0, frame)
             cv2.putText(
-                frame, "RollCall — Asistencia",
+                frame, "RollCall - Asistencia",
                 (12, 24), FONT_BOLD, 0.65, C_WHITE, 1, cv2.LINE_AA,
             )
             cv2.putText(
@@ -1838,7 +1838,7 @@ def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
             if transient_msg and now_ts < transient_until:
                 put_text_bg(frame, transient_msg, (20, fh - 70), fg=C_ORANGE)
 
-            cv2.imshow("RollCall — Asistencia", frame)
+            cv2.imshow("RollCall - Asistencia", frame)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
     finally:
@@ -1918,7 +1918,7 @@ def run_verify(auth: AuthSession, camera_index: int = -1) -> None:
             cv2.rectangle(ov, (0, 0), (fw, 60), (14, 14, 14), -1)
             cv2.addWeighted(ov, 0.7, frame, 0.3, 0, frame)
             cv2.putText(
-                frame, "RollCall — Verify (diagnostico)",
+                frame, "RollCall - Verify (diagnostico)",
                 (12, 26), FONT_BOLD, 0.65, C_CYAN, 1, cv2.LINE_AA,
             )
             cv2.putText(
@@ -2006,7 +2006,7 @@ def run_verify(auth: AuthSession, camera_index: int = -1) -> None:
                             font_scale=0.42, fg=C_GRAY, bg=C_BLACK,
                         )
 
-            cv2.imshow("RollCall — Verify", frame)
+            cv2.imshow("RollCall - Verify", frame)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
     finally:
@@ -2031,7 +2031,7 @@ def prompt_credentials() -> tuple[str, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="RollCall — Cliente de Camara",
+        description="RollCall - Cliente de Camara",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Ejemplos:\n"

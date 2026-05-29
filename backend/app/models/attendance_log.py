@@ -75,7 +75,7 @@ class AttendanceLog(Base, UUIDPrimaryKeyMixin):
 
     recorded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey('"user".id', ondelete="SET NULL"),
+        ForeignKey('user.id', ondelete="SET NULL"),
         nullable=True,
     )
 
