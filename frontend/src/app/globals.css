@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DESIGN TOKENS — Roll Call
+   Raw palette  → --rc-*
+   Semantic     → --sb-* (sidebar) | --hd-* (header) | --sf-* (surface)
+                  --ct-* (content) | --ac-* (accent)
+   ───────────────────────────────────────────────────────────────────────── */
+
+@layer base {
+
+  /* ── Raw palette ──────────────────────────────────────────────────── */
+  :root {
+    --rc-accent:  #FF6D29;
+    --rc-brown:   #453027;
+    --rc-ink:     #161316;
+    --rc-gray:    #BABABA;
+    --rc-white:   #FFFFFF;
+
+    /* Accent tints */
+    --rc-accent-12: rgba(255, 109, 41, 0.12);
+    --rc-accent-08: rgba(255, 109, 41, 0.08);
+  }
+
+  /* ── Layout shell ────────────────────────────────────────────────── */
+  /*
+   * --layout-bg  : the "outer frame" colour — sidebar + header share this.
+   * --page-bg    : the main content area — slightly different, stands out.
+   * --page-radius: top-left corner of the content pane, creates the
+   *                "inset panel" effect where the frame wraps the page.
+   */
+  :root {
+    --layout-bg:    #FFFFFF;
+    --page-bg:      #F5F3F1;     /* warm off-white — distinct from frame */
+    --page-radius:  20px;
+  }
+  .dark {
+    --layout-bg:    #161316;
+    --page-bg:      #1D191D;     /* slightly lighter warm dark — distinct */
+    --page-radius:  20px;
+  }
+
+  /* ── LIGHT MODE semantic tokens ───────────────────────────────────── */
+  :root {
+
+    /* Sidebar */
+    --sb-bg:              var(--layout-bg);
+    --sb-border:          transparent;         /* no side borders — unified look */
+    --sb-text:            #161316;
+
+    /* Three text levels: active > hover > muted (inactive) */
+    --sb-active-bg:       rgba(22, 19, 22, 0.07);   /* subtle gray — active pill */
+    --sb-active-text:     #FF6D29;                   /* orange — active text + icon */
+    --sb-active-shadow:   none;
+    --sb-hover-bg:        rgba(22, 19, 22, 0.04);   /* lighter gray — hover pill */
+    --sb-hover-text:      #453027;                   /* brown — secondary (hover) */
+    --sb-muted:           #BABABA;                   /* gray — tertiary (inactive) */
+
+    --sb-divider:         rgba(22, 19, 22, 0.07);
+    --sb-user-bg:         rgba(22, 19, 22, 0.06);   /* idle bg for UserButton */
+
+    /* Header */
+    --hd-bg:           var(--layout-bg);
+    --hd-border:       transparent;            /* no border — unified with sidebar */
+    --hd-text:         #161316;
+    --hd-muted:        #BABABA;
+
+    /* Surfaces */
+    --sf-base:         var(--page-bg);
+    --sf-raised:       #FFFFFF;
+    --sf-border:       rgba(22, 19, 22, 0.07);
+
+    /* Content */
+    --ct-primary:      #161316;
+    --ct-secondary:    #453027;
+    --ct-disabled:     #BABABA;
+
+    /* Accent */
+    --ac-subtle:       rgba(255, 109, 41, 0.10);
+  }
+
+  /* ── DARK MODE semantic tokens ────────────────────────────────────── */
+  .dark {
+
+    /* Sidebar */
+    --sb-bg:              var(--layout-bg);
+    --sb-border:          transparent;         /* no border — unified look */
+    --sb-text:            #FFFFFF;
+
+    /* Three text levels: active > hover > muted (inactive) */
+    --sb-active-bg:       #FF6D29;                       /* solid orange — active pill */
+    --sb-active-text:     #161316;                       /* ink — active text + icon */
+    --sb-active-shadow:   0 1px 4px rgba(255,109,41,0.30);
+    --sb-hover-bg:        rgba(255, 255, 255, 0.07);    /* subtle white — hover pill */
+    --sb-hover-text:      rgba(255, 255, 255, 0.72);    /* secondary white — hover */
+    --sb-muted:           #BABABA;                       /* gray — tertiary (inactive) */
+
+    --sb-divider:         #453027;
+    --sb-user-bg:         rgba(255, 255, 255, 0.08); /* idle bg for UserButton */
+
+    /* Header */
+    --hd-bg:           var(--layout-bg);
+    --hd-border:       transparent;            /* no border — unified with sidebar */
+    --hd-text:         #FFFFFF;
+    --hd-muted:        #BABABA;
+
+    /* Surfaces */
+    --sf-base:         var(--page-bg);
+    --sf-raised:       #1e1a1e;
+    --sf-border:       #453027;
+
+    /* Content */
+    --ct-primary:      #FFFFFF;
+    --ct-secondary:    #BABABA;
+    --ct-disabled:     #453027;
+
+    /* Accent */
+    --ac-subtle:       rgba(255, 109, 41, 0.14);
+  }
+
+  /* ── Typography base ──────────────────────────────────────────────── */
+  body {
+    font-family:    var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-weight:    400;
+    background:     var(--sf-base);
+    color:          var(--ct-primary);
+    -webkit-font-smoothing:  antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  /* ── Table tokens ────────────────────────────────────────────────── */
+  :root {
+    --tbl-row-alt:       rgba(255, 255, 255, 0.72); /* zebra light row */
+    --tbl-row-hover:     var(--ac-subtle);
+    --tbl-header:        #BABABA;                   /* column header text */
+    --tbl-primary:       #161316;                   /* main cell text */
+    --tbl-secondary:     rgba(22, 19, 22, 0.50);    /* secondary cell text */
+    --tbl-divider:       rgba(22, 19, 22, 0.07);
+    --tbl-check-border:  #BABABA;
+  }
+  .dark {
+    --tbl-row-alt:       rgba(255, 255, 255, 0.045);
+    --tbl-row-hover:     var(--ac-subtle);
+    --tbl-header:        #BABABA;
+    --tbl-primary:       #FFFFFF;
+    --tbl-secondary:     rgba(255, 255, 255, 0.50);
+    --tbl-divider:       rgba(255, 255, 255, 0.06);
+    --tbl-check-border:  #BABABA;
+  }
+
+  /* ── Table base styles ────────────────────────────────────────────── */
+  .rc-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: transparent;
+  }
+
+  .rc-table thead th {
+    padding: 0 14px 10px;
+    text-align: left;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--tbl-header);
+    border-bottom: 1px solid var(--tbl-divider);
+    white-space: nowrap;
+  }
+
+  .rc-table thead th:first-child { padding-left: 6px; width: 44px; }
+
+  .rc-table tbody tr:nth-child(even) td { background: var(--tbl-row-alt); }
+
+  .rc-table tbody tr {
+    cursor: pointer;
+    transition: background 100ms ease;
+  }
+
+  .rc-table tbody tr:hover td { background: var(--tbl-row-hover) !important; }
+
+  .rc-table tbody td {
+    padding: 13px 14px;
+    background: transparent;
+    border: none;
+    font-size: 13.5px;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+
+  .rc-table tbody td:first-child { padding: 13px 6px; }
+
+  .rc-table tbody tr:first-child td:first-child { border-top-left-radius: 8px; }
+  .rc-table tbody tr:first-child td:last-child  { border-top-right-radius: 8px; }
+  .rc-table tbody tr:last-child  td:first-child { border-bottom-left-radius: 8px; }
+  .rc-table tbody tr:last-child  td:last-child  { border-bottom-right-radius: 8px; }
+
+  /* ── Scrollbar — minimal ──────────────────────────────────────────── */
+  ::-webkit-scrollbar               { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track         { background: transparent; }
+  ::-webkit-scrollbar-thumb         { background: var(--rc-gray); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover   { background: var(--rc-brown); }
+}

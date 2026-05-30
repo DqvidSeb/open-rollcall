@@ -1,0 +1,153 @@
+{
+  "Metadata": {
+    "title": "Roll Call",
+    "description": "Sistema de asistencia con reconocimiento facial"
+  },
+  "Nav": {
+    "mainNav": "Navegación principal",
+    "home": "Inicio",
+    "people": "Personas",
+    "departments": "Departamentos",
+    "positions": "Posiciones",
+    "settings": "Configuración",
+    "helpCenter": "Centro de ayuda",
+    "darkTheme": "Tema oscuro",
+    "lightTheme": "Tema claro",
+    "notifications": "Notificaciones",
+    "userMenu": "Menú de usuario"
+  },
+  "Common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "create": "Crear",
+    "search": "Buscar",
+    "filter": "Filtrar",
+    "export": "Exportar",
+    "loading": "Cargando...",
+    "confirm": "Confirmar",
+    "back": "Volver",
+    "next": "Siguiente",
+    "close": "Cerrar",
+    "actions": "Acciones",
+    "noData": "Sin datos disponibles"
+  },
+  "Errors": {
+    "pageNotFound": "Página no encontrada",
+    "goHome": "Ir al panel",
+    "genericError": "Algo salió mal. Inténtalo de nuevo.",
+    "unauthorized": "No tienes permiso para ver esta página."
+  },
+  "Auth": {
+    "loginTitle": "Bienvenido de nuevo",
+    "loginSubtitle": "Inicia sesión en tu cuenta",
+    "loginButton": "Iniciar sesión",
+    "registerTitle": "Crear cuenta",
+    "registerButton": "Crear cuenta",
+    "emailLabel": "Correo electrónico",
+    "emailPlaceholder": "tú@ejemplo.com",
+    "passwordLabel": "Contraseña",
+    "passwordPlaceholder": "Ingresa tu contraseña",
+    "nameLabel": "Nombre completo",
+    "namePlaceholder": "Juan Pérez",
+    "confirmPasswordLabel": "Confirmar contraseña",
+    "confirmPasswordPlaceholder": "Repite tu contraseña",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "noAccount": "¿No tienes cuenta?",
+    "hasAccount": "¿Ya tienes cuenta?"
+  },
+  "Dashboard": {
+    "title": "Panel",
+    "welcome": "Bienvenido, {name}",
+    "todaySessions": "Sesiones de hoy",
+    "totalStudents": "Total de estudiantes",
+    "attendanceRate": "Tasa de asistencia"
+  },
+  "Students": {
+    "title": "Estudiantes",
+    "addStudent": "Agregar estudiante",
+    "emptyTitle": "Aún no hay estudiantes",
+    "emptyDescription": "Agrega tu primer estudiante para comenzar.",
+    "nameLabel": "Nombre completo",
+    "codeLabel": "Código de estudiante",
+    "emailLabel": "Correo",
+    "enrolledLabel": "Inscrito",
+    "notEnrolledLabel": "No inscrito",
+    "faceEnrolled": "Rostro registrado",
+    "faceNotEnrolled": "Sin datos de rostro",
+    "uploadFace": "Subir foto de rostro",
+    "deleteConfirm": "¿Estás seguro de que quieres eliminar este estudiante?"
+  },
+  "Attendance": {
+    "title": "Asistencia",
+    "emptyTitle": "Sin registros de asistencia",
+    "emptyDescription": "Los registros aparecerán aquí cuando inicie una sesión.",
+    "status": {
+      "present": "Presente",
+      "absent": "Ausente",
+      "late": "Tarde",
+      "excused": "Justificado"
+    },
+    "checkIn": "Entrada",
+    "checkOut": "Salida",
+    "confidence": "Confianza",
+    "detectedBy": "Detectado por"
+  },
+  "Sessions": {
+    "title": "Sesiones",
+    "addSession": "Nueva sesión",
+    "emptyTitle": "Aún no hay sesiones",
+    "emptyDescription": "Crea una sesión para comenzar a tomar asistencia.",
+    "nameLabel": "Nombre de la sesión",
+    "dateLabel": "Fecha y hora",
+    "courseLabel": "Código de curso",
+    "status": {
+      "scheduled": "Programada",
+      "active": "Activa",
+      "completed": "Completada",
+      "cancelled": "Cancelada"
+    },
+    "start": "Iniciar sesión",
+    "end": "Finalizar sesión",
+    "deleteConfirm": "¿Estás seguro de que quieres eliminar esta sesión?"
+  },
+  "Recognition": {
+    "title": "Reconocimiento",
+    "startCamera": "Iniciar cámara",
+    "stopCamera": "Detener cámara",
+    "recentCheckIns": "Entradas recientes",
+    "noSession": "Selecciona una sesión para iniciar el reconocimiento",
+    "recognized": "Reconocido",
+    "unknown": "Rostro desconocido",
+    "manualCheckIn": "Entrada manual"
+  },
+  "Reports": {
+    "title": "Reportes",
+    "emptyTitle": "Sin datos de reporte",
+    "attendanceRate": "Tasa de asistencia",
+    "exportCsv": "Exportar CSV",
+    "dateRange": "Rango de fechas",
+    "from": "Desde",
+    "to": "Hasta"
+  },
+  "Departments": {
+    "addButton":        "Nuevo departamento",
+    "colName":          "Nombre",
+    "colDescription":   "Descripción",
+    "colCreated":       "Creado",
+    "colUpdated":       "Actualizado",
+    "emptyTitle":       "Aún no hay departamentos",
+    "emptyDescription": "Crea tu primer departamento para comenzar.",
+    "pagination":       "Página {page} de {total} · {count} registros"
+  },
+  "Settings": {
+    "title": "Configuración",
+    "general": "General",
+    "language": "Idioma",
+    "account": "Cuenta",
+    "security": "Seguridad",
+    "recognitionThreshold": "Umbral de reconocimiento",
+    "saveChanges": "Guardar cambios"
+  }
+}
