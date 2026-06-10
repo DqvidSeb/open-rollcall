@@ -1,12 +1,17 @@
 'use client';
 
 import { useState } from 'react';
+import { SignOut } from '@phosphor-icons/react';
 
 interface UserButtonProps {
   /** Full name — e.g. "David Grijalba" */
   name: string;
   /** Optional subtitle (email, role, etc.) — not shown for now */
   email?: string;
+  /** Accessible label for the logout action */
+  logoutLabel: string;
+  /** Called when the user clicks the logout icon */
+  onLogout: () => void;
 }
 
 /**
@@ -18,7 +23,7 @@ interface UserButtonProps {
  * Hover   : same orange-tint style as the original header user button.
  * Width   : full sidebar width, matching nav links exactly.
  */
-export function UserButton({ name }: UserButtonProps) {
+export function UserButton({ name, logoutLabel, onLogout }: UserButtonProps) {
   const [hovered, setHovered] = useState(false);
 
   // Build initials: first char of word[0] + first char of last word
@@ -29,9 +34,7 @@ export function UserButton({ name }: UserButtonProps) {
     .toUpperCase();
 
   return (
-    <button
-      type="button"
-      // TODO: open profile/account modal when auth is implemented
+    <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -41,8 +44,6 @@ export function UserButton({ name }: UserButtonProps) {
         width:         '100%',
         padding:       '8px 11px',
         borderRadius:  '8px',
-        border:        'none',
-        cursor:        'pointer',
         userSelect:    'none',
         letterSpacing: '-0.01em',
         fontSize:      '13.5px',
@@ -77,6 +78,32 @@ export function UserButton({ name }: UserButtonProps) {
       <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {name}
       </span>
-    </button>
+
+      {/* ── Logout ────────────────────────────────────── */}
+      <button
+        type="button"
+        onClick={onLogout}
+        aria-label={logoutLabel}
+        title={logoutLabel}
+        style={{
+          flexShrink:     0,
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'center',
+          width:          '22px',
+          height:         '22px',
+          padding:        0,
+          border:         'none',
+          borderRadius:   '6px',
+          background:     'transparent',
+          color:          'inherit',
+          cursor:         'pointer',
+          opacity:        hovered ? 1 : 0,
+          transition:     'opacity 130ms ease',
+        }}
+      >
+        <SignOut size={16} aria-hidden="true" />
+      </button>
+    </div>
   );
 }

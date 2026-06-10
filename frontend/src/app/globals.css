@@ -79,6 +79,11 @@
 
     /* Accent */
     --ac-subtle:       rgba(255, 109, 41, 0.10);
+
+    /* Inputs */
+    --input-border:        rgba(22, 19, 22, 0.14);
+    --input-focus-border:  rgba(22, 19, 22, 0.45);
+    --input-placeholder:   rgba(22, 19, 22, 0.35);  /* black-ish in light mode */
   }
 
   /* ── DARK MODE semantic tokens ────────────────────────────────────── */
@@ -118,6 +123,11 @@
 
     /* Accent */
     --ac-subtle:       rgba(255, 109, 41, 0.14);
+
+    /* Inputs */
+    --input-border:        rgba(255, 255, 255, 0.14);
+    --input-focus-border:  rgba(255, 255, 255, 0.50);
+    --input-placeholder:   rgba(255, 255, 255, 0.35);  /* white-ish in dark mode */
   }
 
   /* ── Typography base ──────────────────────────────────────────────── */
@@ -197,6 +207,17 @@
   .rc-table tbody tr:first-child td:last-child  { border-top-right-radius: 8px; }
   .rc-table tbody tr:last-child  td:first-child { border-bottom-left-radius: 8px; }
   .rc-table tbody tr:last-child  td:last-child  { border-bottom-right-radius: 8px; }
+
+  /* ── Autofill override — keep theme colors instead of browser default ── */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--ct-primary);
+    caret-color: var(--ct-primary);
+    transition: background-color 9999s ease-in-out 0s;
+    box-shadow: 0 0 0 1000px var(--sf-raised) inset;
+  }
 
   /* ── Scrollbar — minimal ──────────────────────────────────────────── */
   ::-webkit-scrollbar               { width: 4px; height: 4px; }

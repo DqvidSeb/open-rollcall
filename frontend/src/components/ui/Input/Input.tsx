@@ -16,23 +16,24 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="flex flex-col gap-1">
         {label && (
-          <label htmlFor={inputId} className="text-sm font-medium text-gray-700">
+          <label htmlFor={inputId} className="text-sm font-medium text-content-secondary">
             {label}
           </label>
         )}
         <div className="relative flex items-center">
           {leftAddon && (
-            <span className="absolute left-3 text-gray-400">{leftAddon}</span>
+            <span className="absolute left-3 text-content-disabled">{leftAddon}</span>
           )}
           <input
             id={inputId}
             ref={ref}
             className={clsx(
-              'w-full rounded-lg border bg-white px-3 py-2 text-sm shadow-sm',
-              'placeholder:text-gray-400',
-              'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500',
-              'disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed',
-              error ? 'border-red-500' : 'border-gray-300',
+              'w-full rounded-lg border bg-surface-raised text-content-primary px-3 py-2 text-sm',
+              'placeholder:text-[var(--input-placeholder)]',
+              'transition-colors duration-150',
+              'focus:outline-none focus:border-[var(--input-focus-border)]',
+              'disabled:opacity-60 disabled:cursor-not-allowed',
+              error ? 'border-red-500' : 'border-[var(--input-border)]',
               leftAddon && 'pl-9',
               rightAddon && 'pr-9',
               className,
@@ -40,11 +41,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
           {rightAddon && (
-            <span className="absolute right-3 text-gray-400">{rightAddon}</span>
+            <span className="absolute right-3 text-content-disabled">{rightAddon}</span>
           )}
         </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
-        {hint && !error && <p className="text-xs text-gray-500">{hint}</p>}
+        {hint && !error && <p className="text-xs text-content-secondary">{hint}</p>}
       </div>
     );
   },

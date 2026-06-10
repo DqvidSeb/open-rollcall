@@ -10,16 +10,14 @@ export interface RegisterCredentials {
   confirmPassword: string;
 }
 
+/** Mirrors backend `UserRead` (app/schemas/auth.py). */
 export interface AuthUser {
   id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  avatarUrl?: string | null;
-  createdAt: string;
+  fullName: string;
+  email: string | null;
+  isActive: boolean;
+  isSuperuser: boolean;
 }
-
-export type UserRole = 'admin' | 'instructor' | 'viewer';
 
 export interface AuthTokens {
   accessToken: string;

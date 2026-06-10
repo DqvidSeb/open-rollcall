@@ -14,7 +14,8 @@
     "darkTheme": "Dark theme",
     "lightTheme": "Light theme",
     "notifications": "Notifications",
-    "userMenu": "User menu"
+    "userMenu": "User menu",
+    "logout": "Log out"
   },
   "Common": {
     "save": "Save",
@@ -40,22 +41,26 @@
     "unauthorized": "You are not authorized to view this page."
   },
   "Auth": {
-    "loginTitle": "Welcome back",
-    "loginSubtitle": "Sign in to your account",
+    "loginTitle": "Sign in",
+    "loginSubtitle": "Sign in with your credentials to access the system",
     "loginButton": "Sign in",
+    "loggingIn": "Signing in...",
+    "logout": "Log out",
     "registerTitle": "Create account",
     "registerButton": "Create account",
     "emailLabel": "Email address",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "Email address",
     "passwordLabel": "Password",
-    "passwordPlaceholder": "Enter your password",
+    "passwordPlaceholder": "Password",
     "nameLabel": "Full name",
     "namePlaceholder": "John Doe",
     "confirmPasswordLabel": "Confirm password",
     "confirmPasswordPlaceholder": "Repeat your password",
     "forgotPassword": "Forgot password?",
     "noAccount": "Don't have an account?",
-    "hasAccount": "Already have an account?"
+    "hasAccount": "Already have an account?",
+    "errorInvalidCredentials": "Incorrect email or password.",
+    "errorGeneric": "Something went wrong. Please try again."
   },
   "Dashboard": {
     "title": "Dashboard",

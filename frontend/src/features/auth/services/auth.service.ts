@@ -1,29 +1,64 @@
-// Auth service — stub, to be implemented
-import type { LoginCredentials, RegisterCredentials, AuthTokens, AuthUser } from '../types';
+import { apiClient } from '@/lib/api/client';
+import { ENDPOINTS } from '@/lib/api/endpoints';
+import { sessionStore } from '@/lib/auth/session';
+import type { AuthTokens, AuthUser, LoginCredentials } from '../types';
+
+/** Raw shapes returned by the FastAPI backend. */
+interface TokenResponseDto {
+  access_token: string;
+  refresh_token: string;
+}
+
+interface UserReadDto {
+  id: string;
+  full_name: string;
+  email: string | null;
+  is_active: boolean;
+  is_superuser: boolean;
+}
+
+function mapTokens(dto: TokenResponseDto): AuthTokens {
+  return {
+    accessToken: dto.access_token,
+    refreshToken: dto.refresh_token,
+    expiresIn: 0,
+  };
+}
+
+function mapUser(dto: UserReadDto): AuthUser {
+  return {
+    id: dto.id,
+    fullName: dto.full_name,
+    email: dto.email,
+    isActive: dto.is_active,
+    isSuperuser: dto.is_superuser,
+  };
+}
 
 export const authService = {
-  login: async (_credentials: LoginCredentials): Promise<AuthTokens> => {
-    // TODO: POST /api/v1/auth/login
-    throw new Error('Not implemented');
+  /** POST /api/v1/auth/login — backend expects OAuth2 form-data (username/password). */
+  login: async (credentials: LoginCredentials): Promise<AuthTokens> => {
+    const body = new URLSearchParams({
+      username: credentials.email,
+      password: credentials.password,
+    });
+
+    const dto = await apiClient.post<TokenResponseDto>(ENDPOINTS.AUTH_LOGIN, body, {
+      skipAuth: true,
+    });
+    const tokens = mapTokens(dto);
+    sessionStore.set(tokens);
+    return tokens;
   },
 
-  register: async (_data: RegisterCredentials): Promise<AuthUser> => {
-    // TODO: POST /api/v1/auth/register
-    throw new Error('Not implemented');
+  /** Local-only: clears the session cookies. No backend session to invalidate. */
+  logout: (): void => {
+    sessionStore.clear();
   },
 
-  logout: async (): Promise<void> => {
-    // TODO: POST /api/v1/auth/logout
-    throw new Error('Not implemented');
-  },
-
-  refreshToken: async (_refreshToken: string): Promise<AuthTokens> => {
-    // TODO: POST /api/v1/auth/refresh
-    throw new Error('Not implemented');
-  },
-
+  /** GET /api/v1/auth/me — current authenticated user. */
   me: async (): Promise<AuthUser> => {
-    // TODO: GET /api/v1/auth/me
-    throw new Error('Not implemented');
+    const dto = await apiClient.get<UserReadDto>(ENDPOINTS.AUTH_ME);
+    return mapUser(dto);
   },
 };
