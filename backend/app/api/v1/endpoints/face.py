@@ -14,6 +14,7 @@ from app.schemas.attendance import AttendanceRead
 from app.schemas.face import (
     EnrollBody,
     FaceEnrollResponse,
+    FaceStatusResponse,
     FaceVerifyRequest,
     FaceVerifyResponse,
 )
@@ -179,6 +180,20 @@ async def check_in(
         raise HTTPException(
             status_code=500, detail=f"response build failed: {exc}"
         ) from exc
+
+
+@router.get(
+    "/status/{employee_id}",
+    response_model=FaceStatusResponse,
+    summary="Consultar si un empleado tiene rostro registrado",
+)
+async def get_face_status(
+    employee_id: uuid.UUID,
+    db: DbSession,
+    _: CurrentUserId,
+) -> FaceStatusResponse:
+    service = FaceService(db)
+    return await service.get_status(employee_id)
 
 
 @router.delete(

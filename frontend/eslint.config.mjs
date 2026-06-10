@@ -1,16 +1,9 @@
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
+import nextTypescript from 'eslint-config-next/typescript';
 
 const eslintConfig = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  ...nextCoreWebVitals,
+  ...nextTypescript,
   {
     rules: {
       // No unused vars — remove them instead of commenting out
@@ -21,6 +14,12 @@ const eslintConfig = [
       '@typescript-eslint/no-explicit-any': 'warn',
       // No console.log in production code
       'no-console': ['warn', { allow: ['error', 'warn'] }],
+      // eslint-plugin-react-hooks v7's React Compiler rule flags the standard
+      // "fetch on mount" / "sync external API on mount" effects used throughout
+      // this codebase (data fetching hooks, theme/media-query sync, etc.).
+      // These patterns are correct under React 19 without the compiler, so the
+      // rule is disabled rather than rewritten into Suspense/useSyncExternalStore.
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
 ];

@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.models.face_encoding import FaceEncoding
 from app.repositories.employee import EmployeeRepository
 from app.repositories.face_encoding import FaceEncodingRepository
-from app.schemas.face import FaceVerifyResponse
+from app.schemas.face import FaceStatusResponse, FaceVerifyResponse
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -279,3 +279,15 @@ class FaceService:
 
     async def delete_encodings(self, employee_id: uuid.UUID) -> None:
         await self.enc_repo.delete_by_employee(employee_id)
+
+    async def get_status(self, employee_id: uuid.UUID) -> FaceStatusResponse:
+        emp = await self.emp_repo.get(employee_id)
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employee not found")
+
+        samples = await self.enc_repo.count_by_employee(employee_id)
+        return FaceStatusResponse(
+            employee_id=employee_id,
+            enrolled=samples > 0,
+            samples=samples,
+        )

@@ -36,6 +36,14 @@ class PersonListItem(BaseModel):
     id: uuid.UUID
     full_name: str
     email: str | None
+    phone: str | None
+    person_type: str | None
+    """ "employee" | "student" | None """
+    code: str | None
+    """employee_code or student_code, depending on person_type"""
+    group_name: str | None
+    """department name (employee) or academic program name (student)"""
+    status: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

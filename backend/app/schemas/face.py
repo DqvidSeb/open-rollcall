@@ -25,3 +25,9 @@ class FaceVerifyResponse(BaseModel):
     employee_code: str | None = None
     confidence: float | None = None
     message: str
+
+
+class FaceStatusResponse(BaseModel):
+    employee_id: uuid.UUID
+    enrolled: bool
+    samples: int

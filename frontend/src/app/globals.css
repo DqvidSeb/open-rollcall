@@ -57,6 +57,7 @@
     --sb-hover-bg:        rgba(22, 19, 22, 0.04);   /* lighter gray — hover pill */
     --sb-hover-text:      #453027;                   /* brown — secondary (hover) */
     --sb-muted:           #BABABA;                   /* gray — tertiary (inactive) */
+    --sb-section-label:   #8C8C8C;                   /* dimmer gray — section headings */
 
     --sb-divider:         rgba(22, 19, 22, 0.07);
     --sb-user-bg:         rgba(22, 19, 22, 0.06);   /* idle bg for UserButton */
@@ -95,12 +96,13 @@
     --sb-text:            #FFFFFF;
 
     /* Three text levels: active > hover > muted (inactive) */
-    --sb-active-bg:       #FF6D29;                       /* solid orange — active pill */
-    --sb-active-text:     #161316;                       /* ink — active text + icon */
-    --sb-active-shadow:   0 1px 4px rgba(255,109,41,0.30);
+    --sb-active-bg:       rgba(255, 255, 255, 0.06);     /* neutral gray pill */
+    --sb-active-text:     #FF6D29;                       /* orange — active text + icon */
+    --sb-active-shadow:   none;
     --sb-hover-bg:        rgba(255, 255, 255, 0.07);    /* subtle white — hover pill */
     --sb-hover-text:      rgba(255, 255, 255, 0.72);    /* secondary white — hover */
     --sb-muted:           #BABABA;                       /* gray — tertiary (inactive) */
+    --sb-section-label:   #6E6E6E;                       /* dimmer gray — section headings */
 
     --sb-divider:         #453027;
     --sb-user-bg:         rgba(255, 255, 255, 0.08); /* idle bg for UserButton */

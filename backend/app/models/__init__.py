@@ -9,6 +9,8 @@ from app.models.user import User
 from app.models.department import Department
 from app.models.position import Position
 from app.models.employee import Employee, EmployeeStatus
+from app.models.academic_program import AcademicProgram
+from app.models.student import Student, StudentStatus
 from app.models.face_encoding import FaceEncoding
 from app.models.attendance_log import AttendanceLog, EventType, AttendanceMethod
 from app.models.schedule import Schedule
@@ -21,6 +23,9 @@ __all__ = [
     "Position",
     "Employee",
     "EmployeeStatus",
+    "AcademicProgram",
+    "Student",
+    "StudentStatus",
     "FaceEncoding",
     "AttendanceLog",
     "EventType",

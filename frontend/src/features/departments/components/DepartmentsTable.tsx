@@ -7,7 +7,11 @@ import { DepartmentRow } from './DepartmentRow';
 import { TablePagination } from './TablePagination';
 import type { Department } from '../types';
 
-export function DepartmentsTable() {
+interface DepartmentsTableProps {
+  onRowClick?: (dept: Department) => void;
+}
+
+export function DepartmentsTable({ onRowClick }: DepartmentsTableProps) {
   const t = useTranslations('Departments');
 
   const [page,       setPage]       = useState(1);
@@ -24,7 +28,7 @@ export function DepartmentsTable() {
   const toggleRow = (id: string, checked: boolean) => {
     setSelected(prev => {
       const next = new Set(prev);
-      checked ? next.add(id) : next.delete(id);
+      if (checked) next.add(id); else next.delete(id);
       return next;
     });
   };
@@ -38,10 +42,6 @@ export function DepartmentsTable() {
     } else {
       setSelected(prev => { const n = new Set(prev); items.forEach(d => n.add(d.id)); return n; });
     }
-  };
-
-  const handleRowClick = (_dept: Department) => {
-    // TODO: open department detail / edit panel
   };
 
   // ── States ──────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ export function DepartmentsTable() {
               dept={dept}
               selected={selected.has(dept.id)}
               onSelect={toggleRow}
-              onClick={handleRowClick}
+              onClick={onRowClick ?? (() => {})}
             />
           ))}
         </tbody>

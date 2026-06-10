@@ -36,8 +36,8 @@ class PersonService:
         return person
 
     async def list(self, *, offset: int = 0, limit: int = 50) -> tuple[list[Person], int]:
-        filters = [Person.deleted_at.is_(None)]
-        persons = await self.repo.list(offset=offset, limit=limit, filters=filters)
+        filters = [Person.deleted_at.is_(None), self.repo.is_employee_or_student()]
+        persons = await self.repo.list_with_relations(offset=offset, limit=limit)
         total = await self.repo.count(filters=filters)
         return persons, total
 

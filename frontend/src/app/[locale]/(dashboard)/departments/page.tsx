@@ -1,17 +1,17 @@
-import { DepartmentsToolbar } from '@/features/departments/components/DepartmentsToolbar';
-import { DepartmentsTable } from '@/features/departments/components/DepartmentsTable';
+import { getTranslations } from 'next-intl/server';
+import { DepartmentsPageContent } from '@/features/departments/components/DepartmentsPageContent';
+
+export async function generateMetadata() {
+  const t = await getTranslations('Departments');
+  return { title: t('title') };
+}
 
 /**
  * Departments page.
  *
- * No title — toolbar + table sit directly on the page surface.
- * No card wrappers, no extra backgrounds, no borders.
+ * Mirrors the Persons page layout — toolbar + table sit directly on the
+ * page surface, no card wrappers or extra backgrounds.
  */
 export default function DepartmentsPage() {
-  return (
-    <div className="flex flex-col gap-5">
-      <DepartmentsToolbar />
-      <DepartmentsTable />
-    </div>
-  );
+  return <DepartmentsPageContent />;
 }

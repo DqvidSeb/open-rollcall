@@ -18,7 +18,7 @@ interface SidebarNavLinkProps {
  * IDLE    → transparent               + muted text (--sb-muted)           + regular icon
  *
  * Light mode: active = gray pill + orange text/icon
- * Dark  mode: active = orange pill + ink text/icon  (kept as-is per user request)
+ * Dark  mode: active = neutral gray pill + orange text/icon
  *
  * All colours are CSS custom-property–backed → zero hardcoded values in JS.
  */

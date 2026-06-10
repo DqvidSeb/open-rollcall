@@ -13,7 +13,11 @@ export function DepartmentsToolbar({ onAdd }: DepartmentsToolbarProps) {
 
   return (
     // No background, no border — visually sits on the page surface
-    <div className="flex items-center justify-end">
+    <div className="flex items-center justify-between">
+      <h1 style={{ fontSize: '20px', fontWeight: 600, color: 'var(--tbl-primary)', letterSpacing: '-0.01em' }}>
+        {t('title')}
+      </h1>
+
       <button
         type="button"
         onClick={onAdd}

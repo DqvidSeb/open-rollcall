@@ -4,6 +4,7 @@ import { SquaresFour, UsersThree, TreeStructure, Medal } from '@phosphor-icons/r
 import { useTranslations } from 'next-intl';
 import type { Icon } from '@phosphor-icons/react';
 import { Logo } from '@/components/ui/Logo';
+import { AttendanceCheckButton } from '@/features/attendance-checkin/components/AttendanceCheckButton';
 import { SidebarNavLink } from './SidebarNavLink';
 import { SidebarBottom } from './SidebarBottom';
 
@@ -13,11 +14,26 @@ interface NavItem {
   icon:     Icon;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard',  labelKey: 'home',        icon: SquaresFour   },
-  { href: '/students',   labelKey: 'people',      icon: UsersThree    },
-  { href: '/departments', labelKey: 'departments', icon: TreeStructure },
-  { href: '/positions',  labelKey: 'positions',   icon: Medal         },
+interface NavSection {
+  titleKey: string;
+  items:    NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    titleKey: 'sectionMain',
+    items: [
+      { href: '/dashboard', labelKey: 'home',   icon: SquaresFour },
+      { href: '/persons',   labelKey: 'people', icon: UsersThree  },
+    ],
+  },
+  {
+    titleKey: 'sectionEmployees',
+    items: [
+      { href: '/departments', labelKey: 'departments', icon: TreeStructure },
+      { href: '/positions',   labelKey: 'positions',   icon: Medal         },
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -37,16 +53,30 @@ export function Sidebar() {
 
       {/* ── Main nav ──────────────────────────────────────────────────────────── */}
       <nav
-        className="flex-1 overflow-y-auto px-3 flex flex-col gap-1"
+        className="flex-1 overflow-y-auto px-3 flex flex-col"
         aria-label={t('mainNav')}
       >
-        {NAV_ITEMS.map(({ href, labelKey, icon }) => (
-          <SidebarNavLink
-            key={href}
-            href={href}
-            label={t(labelKey)}
-            icon={icon}
-          />
+        <div className="px-1 pb-4">
+          <AttendanceCheckButton />
+        </div>
+
+        {NAV_SECTIONS.map(({ titleKey, items }) => (
+          <div key={titleKey} className="flex flex-col gap-1 pb-4">
+            <span
+              className="px-3 pb-1 font-semibold uppercase"
+              style={{ color: 'var(--sb-section-label)', fontSize: '10.5px', letterSpacing: '0.04em' }}
+            >
+              {t(titleKey)}
+            </span>
+            {items.map(({ href, labelKey, icon }) => (
+              <SidebarNavLink
+                key={href}
+                href={href}
+                label={t(labelKey)}
+                icon={icon}
+              />
+            ))}
+          </div>
         ))}
       </nav>
 

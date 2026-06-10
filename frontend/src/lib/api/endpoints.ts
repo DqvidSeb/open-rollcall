@@ -19,10 +19,18 @@ export const ENDPOINTS = {
   AUTH_REFRESH: '/api/v1/auth/refresh',
   AUTH_ME: '/api/v1/auth/me',
 
+  // Persons
+  PERSONS: '/api/v1/persons',
+  PERSON: (id: string) => `/api/v1/persons/${id}`,
+
   // Students
   STUDENTS: '/api/v1/students',
   STUDENT: (id: string) => `/api/v1/students/${id}`,
   STUDENT_FACE: (id: string) => `/api/v1/students/${id}/face`,
+
+  // Academic programs (/api/v1/students/programs)
+  ACADEMIC_PROGRAMS: '/api/v1/students/programs',
+  ACADEMIC_PROGRAM: (id: string) => `/api/v1/students/programs/${id}`,
 
   // Sessions
   SESSIONS: '/api/v1/sessions',
@@ -39,6 +47,12 @@ export const ENDPOINTS = {
   RECOGNITION_RECOGNIZE: '/api/v1/recognition/recognize',
   RECOGNITION_CHECKIN: '/api/v1/recognition/checkin',
   RECOGNITION_CHECKOUT: '/api/v1/recognition/checkout',
+
+  // Face enrollment & recognition (/api/v1/face)
+  FACE_STATUS:    (id: string) => `/api/v1/face/status/${id}`,
+  FACE_ENROLL:    (id: string) => `/api/v1/face/enroll/${id}`,
+  FACE_ENCODINGS: (id: string) => `/api/v1/face/encodings/${id}`,
+  FACE_CHECK_IN:  '/api/v1/face/check-in',
 
   // Reports
   REPORTS_ATTENDANCE: '/api/v1/reports/attendance',

@@ -3,10 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
 
+from app.models.employee import Employee
 from app.models.person import Person
+from app.models.student import Student
 from app.repositories.base import BaseRepository
 
 
@@ -19,10 +21,31 @@ class PersonRepository(BaseRepository[Person]):
     async def get_active(self, id: uuid.UUID) -> Person | None:
         result = await self.db.execute(
             select(Person)
-            .options(joinedload(Person.user), joinedload(Person.employee))
+            .options(joinedload(Person.user), joinedload(Person.employee), joinedload(Person.student))
             .where(Person.id == id, self._active())
         )
         return result.scalar_one_or_none()
+
+    def is_employee_or_student(self):
+        """Excludes plain `Person` records that only back a system `User`
+        (admins/staff accounts) — the persons table only lists employees
+        and students."""
+        return or_(Person.employee.has(), Person.student.has())
+
+    async def list_with_relations(self, *, offset: int = 0, limit: int = 50) -> list[Person]:
+        result = await self.db.execute(
+            select(Person)
+            .options(
+                joinedload(Person.employee).joinedload(Employee.department),
+                joinedload(Person.employee).joinedload(Employee.position),
+                joinedload(Person.student).joinedload(Student.academic_program),
+            )
+            .where(self._active(), self.is_employee_or_student())
+            .order_by(Person.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.unique().scalars().all())
 
     async def get_by_email(self, email: str) -> Person | None:
         result = await self.db.execute(

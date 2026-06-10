@@ -17,6 +17,9 @@ class Person(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     employee: Mapped["Employee | None"] = relationship(
         "Employee", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
+    student: Mapped["Student | None"] = relationship(
+        "Student", back_populates="person", uselist=False, cascade="all, delete-orphan"
+    )
 
     @property
     def full_name(self) -> str:

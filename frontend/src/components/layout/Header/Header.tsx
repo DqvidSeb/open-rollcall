@@ -3,7 +3,7 @@
 import { Question } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
-const GITHUB_URL = 'https://github.com/DqvidSeb/open-scribe';
+const GITHUB_URL = 'https://github.com/DqvidSeb/open-rollcall';
 
 /** GitHub mark — official SVG path, viewBox 0 0 24 24 */
 function GitHubIcon({ size = 17 }: { size?: number }) {

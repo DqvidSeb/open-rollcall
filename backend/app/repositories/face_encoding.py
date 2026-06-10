@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import select
+from sqlalchemy import func, select
 from app.models.face_encoding import FaceEncoding
 from app.repositories.base import BaseRepository
 
@@ -16,6 +16,14 @@ class FaceEncodingRepository(BaseRepository[FaceEncoding]):
             .order_by(FaceEncoding.sample_index)
         )
         return list(result.scalars().all())
+
+    async def count_by_employee(self, employee_id: uuid.UUID) -> int:
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(FaceEncoding)
+            .where(FaceEncoding.employee_id == employee_id)
+        )
+        return int(result.scalar_one())
 
     async def delete_by_employee(self, employee_id: uuid.UUID) -> None:
         encodings = await self.get_by_employee(employee_id)

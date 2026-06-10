@@ -33,7 +33,7 @@ async def list_persons(
     svc = PersonService(db)
     persons, total = await svc.list(offset=offset, limit=limit)
     return PaginatedPersons(
-        items=[PersonListItem.model_validate(p) for p in persons],
+        items=[_to_list_item(p) for p in persons],
         total=total, offset=offset, limit=limit,
     )
 
@@ -64,3 +64,33 @@ async def delete_person(
 ) -> None:
     svc = PersonService(db)
     await svc.delete(person_id)
+
+
+def _to_list_item(person) -> PersonListItem:
+    person_type: str | None = None
+    code: str | None = None
+    group_name: str | None = None
+    person_status: str | None = None
+
+    if person.employee is not None:
+        person_type = "employee"
+        code = person.employee.employee_code
+        group_name = person.employee.department.name if person.employee.department else None
+        person_status = person.employee.status.value
+    elif person.student is not None:
+        person_type = "student"
+        code = person.student.student_code
+        group_name = person.student.academic_program.name if person.student.academic_program else None
+        person_status = person.student.status.value
+
+    return PersonListItem(
+        id=person.id,
+        full_name=person.full_name,
+        email=person.email,
+        phone=person.phone,
+        person_type=person_type,
+        code=code,
+        group_name=group_name,
+        status=person_status,
+        created_at=person.created_at,
+    )

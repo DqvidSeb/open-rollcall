@@ -19,7 +19,7 @@ class EmployeeRepository(BaseRepository[Employee]):
             select(Employee)
             .join(Person, Employee.id == Person.id)
             .options(
-                joinedload(Employee.person),
+                joinedload(Employee.person).joinedload(Person.user),
                 joinedload(Employee.department),
                 joinedload(Employee.position),
                 joinedload(Employee.face_encodings),
