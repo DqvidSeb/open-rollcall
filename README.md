@@ -42,8 +42,19 @@ RollCall/
 │   │   └── services/           # Lógica de negocio
 │   ├── alembic/                # Migraciones de base de datos
 │   ├── camera_client.py        # Cliente de cámara (corre en el nodo local)
-│   └── README.md               ← documentación técnica completa
-├── frontend/                   # (próximamente — Next.js)
+│   ├── Dockerfile
+│   ├── .env.example
+│   └── README.md               ← documentación técnica completa del backend
+├── frontend/                   # Interfaz web (Next.js + React)
+│   ├── src/
+│   │   ├── app/[locale]/        # Rutas (App Router) — auth + dashboard
+│   │   ├── components/          # Layout y componentes UI base
+│   │   ├── features/            # Módulos por dominio (persons, departments, ...)
+│   │   └── lib/                  # Cliente API, endpoints, i18n
+│   ├── messages/                 # Traducciones (en.json, es.json)
+│   ├── Dockerfile
+│   ├── .env.example
+│   └── README.md               ← documentación técnica completa del frontend
 ├── docker-compose.example.yml  # Plantilla — copiar a docker-compose.yml
 └── README.md
 ```
@@ -57,8 +68,9 @@ RollCall/
 | Base de datos | PostgreSQL 18 + pgvector |
 | ORM / migraciones | SQLAlchemy 2 async + Alembic |
 | Reconocimiento facial | DeepFace / ArcFace + TensorFlow |
+| Frontend | Next.js 16 + React 19 + Tailwind CSS |
+| i18n | next-intl (Español / Inglés) |
 | Contenerización | Docker + Docker Compose |
-| Frontend (próximo) | Next.js + React |
 
 ## Configuración de horarios (Schedule)
 
@@ -92,33 +104,261 @@ Content-Type: application/json
 
 Solo puede existir un horario activo a la vez; activar uno desactiva el anterior automáticamente. El endpoint `GET /api/v1/schedules/active` es **público** (sin token) para que `camera_client.py` lo consulte al arrancar. El servidor también valida que cada evento de reconocimiento caiga dentro de la ventana configurada antes de registrarlo.
 
-## Inicio rápido
+## Despliegue completo con Docker (Windows y Linux)
+
+Esta guía levanta el **stack completo** (base de datos + backend + frontend) usando Docker y Docker Compose. Los pasos son los mismos en Windows y Linux; las diferencias puntuales se indican en cada paso.
+
+### 0. Prerrequisitos
+
+| Requisito | Windows | Linux |
+|---|---|---|
+| Docker | [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/) (con WSL2 habilitado) | [Docker Engine + Compose plugin](https://docs.docker.com/engine/install/) |
+| Git | [git-scm.com](https://git-scm.com/download/win) | `sudo apt-get install git` (Debian/Ubuntu) o equivalente |
+| Terminal | PowerShell | bash/zsh |
+
+En Linux, agrega tu usuario al grupo `docker` para no necesitar `sudo` en cada comando:
 
 ```bash
-# 1. Clonar el repositorio
+sudo usermod -aG docker $USER && newgrp docker
+```
+
+Verifica que Docker esté funcionando:
+
+```bash
+docker --version
+docker compose version
+```
+
+---
+
+### 1. Clonar el repositorio
+
+**Linux / macOS (bash):**
+```bash
 git clone <repo-url>
 cd RollCall
+```
 
-# 2. Configurar la base de datos
+**Windows (PowerShell):**
+```powershell
+git clone <repo-url>
+cd RollCall
+```
+
+---
+
+### 2. Configurar el Docker Compose (base de datos + backend + frontend)
+
+El archivo `docker-compose.yml` real **no se versiona** (contiene credenciales). Copia la plantilla y edítala:
+
+**Linux / macOS:**
+```bash
 cp docker-compose.example.yml docker-compose.yml
-# Editar docker-compose.yml con credenciales reales
-docker compose up -d
+```
 
-# 3. Configurar el backend
+**Windows (PowerShell):**
+```powershell
+Copy-Item docker-compose.example.yml docker-compose.yml
+```
+
+Abre `docker-compose.yml` y reemplaza:
+
+- `<CAMBIAR_USUARIO>` → un usuario de PostgreSQL (ej. `rollcall_user`)
+- `<CAMBIAR_CONTRASEÑA_SEGURA>` → una contraseña segura (ej. generada con `openssl rand -hex 16`)
+
+> Estas mismas credenciales deben coincidir con `POSTGRES_USER` / `POSTGRES_PASSWORD` del `.env` del backend (paso 3).
+
+---
+
+### 3. Configurar las variables de entorno del backend
+
+**Linux / macOS:**
+```bash
+cp backend/.env.example backend/.env
+```
+
+**Windows (PowerShell):**
+```powershell
+Copy-Item backend/.env.example backend/.env
+```
+
+Edita `backend/.env`:
+
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `ENVIRONMENT` | `development` o `production` | `production` |
+| `SECRET_KEY` | Clave JWT (mín. 32 chars aleatorios) | `openssl rand -hex 32` |
+| `ALLOWED_ORIGINS` | Orígenes permitidos por CORS (incluye la URL del frontend) | `["http://localhost:3020"]` |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Igual que en `docker-compose.yml` | `rollcall_user` / `...` / `rollcall_dev` |
+| `POSTGRES_HOST` | `db` cuando corre con Docker Compose (nombre del servicio) | `db` |
+| `POSTGRES_PORT` | Puerto interno de Postgres | `5432` |
+| `API_USER` / `API_PASSWORD` | Credenciales del usuario admin que usará `camera_client.py` | — |
+| `FACE_DISTANCE_THRESHOLD` | Umbral de similitud facial (0–1) | `0.40` |
+
+> Generar `SECRET_KEY` — Linux/macOS: `openssl rand -hex 32`. Windows (PowerShell): `[Convert]::ToHexString((1..32 | ForEach-Object { Get-Random -Maximum 256 }))`.
+
+---
+
+### 4. Configurar las variables de entorno del frontend
+
+**Linux / macOS:**
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+**Windows (PowerShell):**
+```powershell
+Copy-Item frontend/.env.example frontend/.env
+```
+
+Edita `frontend/.env`:
+
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `NEXT_PUBLIC_APP_URL` | URL pública del frontend | `http://localhost:3020` |
+| `NEXT_PUBLIC_API_URL` | URL pública de la API (alcanzable desde el navegador del usuario) | `http://localhost:8000` |
+| `NEXT_PUBLIC_DEFAULT_LOCALE` | Idioma por defecto (`en` / `es`) | `es` |
+
+> `NEXT_PUBLIC_API_URL` se incrusta en el bundle del navegador en tiempo de **build**. Si la cambias, reconstruye la imagen del frontend (`docker compose build frontend`).
+
+---
+
+### 5. Levantar el stack completo
+
+Desde la raíz del repositorio:
+
+```bash
+docker compose up -d --build
+```
+
+Esto construye y arranca tres contenedores:
+
+- `rollcall_db` — PostgreSQL 18 + pgvector (puerto `5433` en el host → `5432` interno)
+- `rollcall_backend` — API FastAPI (puerto `8000`)
+- `rollcall_frontend` — interfaz Next.js (puerto `3020`)
+
+Verifica el estado:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+---
+
+### 6. Aplicar las migraciones de base de datos
+
+Con los contenedores corriendo, ejecuta las migraciones de Alembic **dentro** del contenedor del backend:
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+---
+
+### 7. Crear el usuario administrador
+
+Registra el primer usuario (administrador) a través de la API. Puedes usar Swagger UI o `curl`:
+
+**Linux / macOS:**
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@rollcall.com","password":"CambiaEstaContraseña123","full_name":"Admin"}'
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/auth/register" `
+  -ContentType "application/json" `
+  -Body '{"email":"admin@rollcall.com","password":"CambiaEstaContraseña123","full_name":"Admin"}'
+```
+
+Usa estas mismas credenciales en `API_USER` / `API_PASSWORD` (`backend/.env`) si vas a correr `camera_client.py`.
+
+---
+
+### 8. Acceder al sistema
+
+| Servicio | URL |
+|---|---|
+| Frontend (interfaz web) | `http://localhost:3020` |
+| API (Swagger UI) | `http://localhost:8000/docs` (solo si `ENVIRONMENT != production`) |
+| API (ReDoc) | `http://localhost:8000/redoc` |
+| PostgreSQL (cliente externo) | `localhost:5433` |
+
+---
+
+### 9. Cliente de cámara (opcional, fuera de Docker)
+
+`camera_client.py` accede a la cámara del equipo, por lo que normalmente **no corre en Docker** — corre directamente en el sistema operativo del nodo donde está conectada la cámara. Ver la sección "Cliente de cámara" en [`backend/README.md`](backend/README.md) para la instalación del entorno Python local (`venv` + `pip install -e ".[dev]"`).
+
+```bash
+cd backend
+python camera_client.py attend     # modo asistencia (check-in / check-out)
+python camera_client.py enroll <employee_id>   # registrar rostro de un empleado
+```
+
+> Configura `BASE_URL` en `backend/.env` apuntando a la URL pública de la API (ej. `http://localhost:8000/api/v1` si la cámara corre en la misma máquina que Docker).
+
+---
+
+### Comandos útiles de Docker Compose
+
+```bash
+# Ver logs de un servicio específico
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
+
+# Reiniciar un servicio tras cambiar su .env
+docker compose restart backend
+
+# Reconstruir un servicio tras cambiar código o dependencias
+docker compose up -d --build backend
+docker compose up -d --build frontend
+
+# Detener todo (mantiene los datos)
+docker compose stop
+
+# Detener y eliminar contenedores (mantiene los volúmenes/datos)
+docker compose down
+
+# Detener y eliminar TODO, incluyendo datos de la base de datos
+docker compose down -v
+```
+
+---
+
+## Desarrollo local sin Docker (opcional)
+
+Para desarrollo activo del backend o frontend, normalmente solo la base de datos corre en Docker y el backend/frontend corren directamente en el sistema con recarga automática:
+
+```bash
+# 1. Base de datos (Docker)
+cp docker-compose.example.yml docker-compose.yml
+# Editar credenciales
+docker compose up -d db
+
+# 2. Backend (ver backend/README.md para el entorno virtual)
 cd backend
 cp .env.example .env
-# Editar .env (SECRET_KEY, credenciales de BD, etc.)
-
-# 4. Instalar dependencias y correr migraciones
+# POSTGRES_HOST=localhost (no "db", porque no corre dentro de la red de Docker)
 pip install -e ".[dev]"
 alembic upgrade head
-
-# 5. Arrancar el servidor
 uvicorn app.main:app --reload
 
-# 6. Abrir la documentación interactiva
-# http://localhost:8000/docs
+# 3. Frontend (en otra terminal, ver frontend/README.md)
+cd frontend
+cp .env.example .env
+pnpm install
+pnpm dev
 ```
+
+| Servicio | URL en desarrollo |
+|---|---|
+| Frontend | `http://localhost:3020` |
+| Backend / Swagger | `http://localhost:8000/docs` |
 
 ## Seguridad — credenciales en Git
 
@@ -143,8 +383,8 @@ Después de esto **rota todas las contraseñas y tokens** que hayan quedado expu
 ## Documentación
 
 - [Backend — instalación y despliegue](backend/README.md)
+- [Frontend — instalación y despliegue](frontend/README.md)
 - Swagger UI: `http://localhost:8000/docs` (solo en entornos no-producción)
-- Frontend — próximamente
 
 ## Licencia
 

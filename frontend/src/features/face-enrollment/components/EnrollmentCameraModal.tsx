@@ -11,7 +11,7 @@ import type { FaceEnrollResult } from '../types';
 
 interface EnrollmentCameraModalProps {
   open: boolean;
-  employeeId: string;
+  personId: string;
   onClose: () => void;
   onEnrolled: (result: FaceEnrollResult) => void;
 }
@@ -20,11 +20,11 @@ interface EnrollmentCameraModalProps {
  * Full guided camera capture flow: requests camera access, walks the user
  * through 5 angles with countdowns and quality checks, then uploads.
  */
-export function EnrollmentCameraModal({ open, employeeId, onClose, onEnrolled }: EnrollmentCameraModalProps) {
+export function EnrollmentCameraModal({ open, personId, onClose, onEnrolled }: EnrollmentCameraModalProps) {
   const t = useTranslations('Persons.form.face');
   const { videoRef, isReady, error: cameraError } = useCamera(open);
   const { phase, currentStep, countdown, thumbnail, qualityWarning, retry } =
-    useFaceCapture({ employeeId, videoRef, cameraReady: isReady, onEnrolled });
+    useFaceCapture({ personId, videoRef, cameraReady: isReady, onEnrolled });
 
   if (!open) return null;
 

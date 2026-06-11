@@ -283,6 +283,6 @@ def _emp_read(emp) -> EmployeeRead:
         position_name=emp.position.name if emp.position else None,
         status=emp.status,
         hire_date=emp.hire_date,
-        is_enrolled=bool(emp.face_encodings),
+        is_enrolled=emp.person.is_enrolled,
         created_at=emp.created_at,
     )

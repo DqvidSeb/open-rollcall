@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-FaceEncoding — embeddings biométricos de un employee.
+FaceEncoding — embeddings biométricos de una persona (employee o student).
 Solo se guardan vectores, nunca fotos originales.
 ArcFace produce embeddings de 512 dimensiones.
 """
@@ -21,9 +21,9 @@ ARCFACE_DIM = 512
 class FaceEncoding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "face_encoding"
 
-    employee_id: Mapped[uuid.UUID] = mapped_column(
+    person_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("employee.id", ondelete="CASCADE"),
+        ForeignKey("person.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -32,9 +32,9 @@ class FaceEncoding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     model_name: Mapped[str] = mapped_column(String(50), nullable=False)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    employee: Mapped["Employee"] = relationship(  # noqa: F821
-        "Employee", back_populates="face_encodings"
+    person: Mapped["Person"] = relationship(  # noqa: F821
+        "Person", back_populates="face_encodings"
     )
 
     def __repr__(self) -> str:
-        return f"<FaceEncoding id={self.id} employee_id={self.employee_id} sample={self.sample_index}>"
+        return f"<FaceEncoding id={self.id} person_id={self.person_id} sample={self.sample_index}>"

@@ -9,6 +9,7 @@
     "people": "People",
     "departments": "Departments",
     "positions": "Positions",
+    "academicPrograms": "Academic programs",
     "settings": "Settings",
     "helpCenter": "Help Center",
     "darkTheme": "Dark theme",
@@ -17,6 +18,7 @@
     "userMenu": "User menu",
     "logout": "Log out",
     "sectionMain": "Main",
+    "sectionStudents": "Students",
     "sectionEmployees": "Employees"
   },
   "Common": {
@@ -224,7 +226,6 @@
         "registerButton": "Register facial data",
         "statusLoading": "Checking facial recognition status...",
         "statusEnrolled": "Facial data registered ({count} samples)",
-        "studentComingSoon": "Facial recognition for students is coming soon.",
         "infoTitle": "Register facial data",
         "infoBody": "We'll guide you through 5 quick photos from different angles. This takes about a minute.",
         "tips": {
@@ -313,6 +314,35 @@
       "savingButton": "Saving…",
       "deleteConfirmTitle": "Delete position",
       "deleteConfirmText": "Are you sure you want to delete this position?",
+      "deleteConfirmButton": "Delete"
+    }
+  },
+  "AcademicPrograms": {
+    "title": "Academic programs",
+    "addButton": "New program",
+    "colName": "Name",
+    "colDescription": "Description",
+    "colCreated": "Created",
+    "colUpdated": "Updated",
+    "emptyTitle": "No academic programs yet",
+    "emptyDescription": "Create your first academic program to get started.",
+    "pagination": "Page {page} of {total} · {count} records",
+    "form": {
+      "createTitle": "New academic program",
+      "createDescription": "Add an academic program to assign to students.",
+      "nameLabel": "Name",
+      "descriptionLabel": "Description",
+      "cancelButton": "Cancel",
+      "submitButton": "Create program",
+      "submittingButton": "Creating…",
+      "errorGeneric": "Could not save the academic program. Please check the fields and try again.",
+      "detailsTitle": "Academic program details",
+      "editButton": "Edit",
+      "deleteButton": "Delete",
+      "saveButton": "Save changes",
+      "savingButton": "Saving…",
+      "deleteConfirmTitle": "Delete academic program",
+      "deleteConfirmText": "Are you sure you want to delete this academic program?",
       "deleteConfirmButton": "Delete"
     }
   },

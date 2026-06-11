@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
-    from app.models.employee import Employee
+    from app.models.person import Person
 
 
 class EventType(str, enum.Enum):
@@ -33,9 +33,9 @@ class AttendanceMethod(str, enum.Enum):
 class AttendanceLog(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "attendance_log"
 
-    employee_id: Mapped[uuid.UUID] = mapped_column(
+    person_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("employee.id", ondelete="CASCADE"),
+        ForeignKey("person.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -88,14 +88,14 @@ class AttendanceLog(Base, UUIDPrimaryKeyMixin):
     )
 
     # ── Relationships ─────────────────────────────────────────────────────────
-    employee: Mapped[Employee] = relationship(
-        "Employee",
+    person: Mapped["Person"] = relationship(
+        "Person",
         back_populates="attendance_logs",
     )
 
     def __repr__(self) -> str:
         return (
             f"<AttendanceLog id={self.id} "
-            f"employee_id={self.employee_id} "
+            f"person_id={self.person_id} "
             f"type={self.event_type}>"
         )

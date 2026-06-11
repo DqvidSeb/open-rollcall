@@ -1,6 +1,6 @@
 'use client';
 
-import { SquaresFour, UsersThree, TreeStructure, Medal } from '@phosphor-icons/react';
+import { SquaresFour, UsersThree, TreeStructure, Medal, GraduationCap } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type { Icon } from '@phosphor-icons/react';
 import { Logo } from '@/components/ui/Logo';
@@ -25,6 +25,12 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/dashboard', labelKey: 'home',   icon: SquaresFour },
       { href: '/persons',   labelKey: 'people', icon: UsersThree  },
+    ],
+  },
+  {
+    titleKey: 'sectionStudents',
+    items: [
+      { href: '/academic-programs', labelKey: 'academicPrograms', icon: GraduationCap },
     ],
   },
   {

@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.face_encoding import FaceEncoding
-from app.repositories.employee import EmployeeRepository
+from app.models.person import Person
 from app.repositories.face_encoding import FaceEncodingRepository
+from app.repositories.person import PersonRepository
 from app.schemas.face import FaceStatusResponse, FaceVerifyResponse
 
 logger = logging.getLogger(__name__)
@@ -75,10 +76,19 @@ def _b64_to_numpy(b64: str):
         raise HTTPException(status_code=422, detail=f"Invalid image: {exc}")
 
 
+def _person_type_and_code(person: Person) -> tuple[str | None, str | None]:
+    """Devuelve (person_type, code) según la especialización de `person`."""
+    if person.employee is not None:
+        return "employee", person.employee.employee_code
+    if person.student is not None:
+        return "student", person.student.student_code
+    return None, None
+
+
 class FaceService:
     def __init__(self, db: AsyncSession) -> None:
         self.enc_repo = FaceEncodingRepository(db)
-        self.emp_repo = EmployeeRepository(db)
+        self.person_repo = PersonRepository(db)
 
     def _extract_embedding(self, img) -> list[float]:
         DeepFace = _require_deepface()
@@ -109,17 +119,17 @@ class FaceService:
             logger.error("DeepFace error: %s", exc)
             raise HTTPException(status_code=500, detail="Feature extraction failed")
 
-    async def enroll(self, employee_id: uuid.UUID, images_b64: list[str]) -> int:
-        emp = await self.emp_repo.get_with_person(employee_id)
-        if not emp:
-            raise HTTPException(status_code=404, detail="Employee not found")
+    async def enroll(self, person_id: uuid.UUID, images_b64: list[str]) -> int:
+        person = await self.person_repo.get_attendee(person_id)
+        if not person:
+            raise HTTPException(status_code=404, detail="Person not found")
 
         embeddings = [self._extract_embedding(_b64_to_numpy(img)) for img in images_b64]
-        await self.enc_repo.delete_by_employee(employee_id)
+        await self.enc_repo.delete_by_person(person_id)
 
         for idx, emb in enumerate(embeddings):
             enc = FaceEncoding(
-                employee_id=employee_id,
+                person_id=person_id,
                 embedding=emb,
                 sample_index=idx,
                 model_name=settings.FACE_MODEL_NAME,
@@ -127,7 +137,7 @@ class FaceService:
             )
             await self.enc_repo.create(enc)
 
-        logger.info("Enrolled %d samples for employee_id=%s", len(embeddings), employee_id)
+        logger.info("Enrolled %d samples for person_id=%s", len(embeddings), person_id)
         return len(embeddings)
 
     async def verify(self, image_b64: str) -> FaceVerifyResponse:
@@ -204,33 +214,33 @@ class FaceService:
         # Log de los top-3 para diagnostico.
         for i, (enc, dist) in enumerate(matches[:3]):
             logger.info(
-                "verify: top%d employee_id=%s dist=%.4f",
-                i + 1, enc.employee_id, dist,
+                "verify: top%d person_id=%s dist=%.4f",
+                i + 1, enc.person_id, dist,
             )
 
         threshold = settings.FACE_DISTANCE_THRESHOLD
 
-        # Voto por empleado: agrupa las muestras bajo threshold y elige al que
-        # mas "votos" tenga; en empate por menor distancia minima.
-        per_emp_min: dict[uuid.UUID, float] = {}
-        per_emp_votes: dict[uuid.UUID, int] = {}
+        # Voto por persona: agrupa las muestras bajo threshold y elige a la
+        # que mas "votos" tenga; en empate por menor distancia minima.
+        per_person_min: dict[uuid.UUID, float] = {}
+        per_person_votes: dict[uuid.UUID, int] = {}
         for enc, dist in matches:
-            if dist < per_emp_min.get(enc.employee_id, float("inf")):
-                per_emp_min[enc.employee_id] = dist
+            if dist < per_person_min.get(enc.person_id, float("inf")):
+                per_person_min[enc.person_id] = dist
             if dist < threshold:
-                per_emp_votes[enc.employee_id] = per_emp_votes.get(enc.employee_id, 0) + 1
+                per_person_votes[enc.person_id] = per_person_votes.get(enc.person_id, 0) + 1
 
         absolute_best_enc, absolute_best_dist = matches[0]
         absolute_best_conf = round(max(0.0, 1.0 - (absolute_best_dist / 2.0)), 4)
 
-        if not per_emp_votes:
+        if not per_person_votes:
             # Ningun encoding paso el threshold. Devolvemos la distancia del
             # mas cercano para que el operador sepa que tan cerca esta.
-            nearest_emp = await self.emp_repo.get_with_person(
-                absolute_best_enc.employee_id
+            nearest_person = await self.person_repo.get_attendee(
+                absolute_best_enc.person_id
             )
             nearest_name = (
-                nearest_emp.person.full_name if nearest_emp else "(empleado eliminado)"
+                nearest_person.full_name if nearest_person else "(persona eliminada)"
             )
             logger.info(
                 "verify: no match within threshold=%.2f. Nearest=%s dist=%.4f",
@@ -247,47 +257,49 @@ class FaceService:
 
         # Ganador: mas votos -> en empate, menor distancia minima.
         winner_id = max(
-            per_emp_votes.keys(),
-            key=lambda eid: (per_emp_votes[eid], -per_emp_min[eid]),
+            per_person_votes.keys(),
+            key=lambda pid: (per_person_votes[pid], -per_person_min[pid]),
         )
-        winner_dist = per_emp_min[winner_id]
-        winner_votes = per_emp_votes[winner_id]
+        winner_dist = per_person_min[winner_id]
+        winner_votes = per_person_votes[winner_id]
 
-        emp = await self.emp_repo.get_with_person(winner_id)
-        if not emp:
-            logger.warning("verify: matched employee_id=%s no longer exists", winner_id)
+        person = await self.person_repo.get_attendee(winner_id)
+        if not person:
+            logger.warning("verify: matched person_id=%s no longer exists", winner_id)
             return FaceVerifyResponse(
                 recognized=False,
                 confidence=absolute_best_conf,
-                message="Matched encoding belongs to a deleted employee",
+                message="Matched encoding belongs to a deleted person",
             )
 
+        person_type, code = _person_type_and_code(person)
         confidence = round(max(0.0, 1.0 - (winner_dist / 2.0)), 4)
         logger.info(
             "verify: match %s code=%s dist=%.4f votes=%d/10 conf=%.4f",
-            emp.person.full_name, emp.employee_code,
+            person.full_name, code,
             winner_dist, winner_votes, confidence,
         )
         return FaceVerifyResponse(
             recognized=True,
-            employee_id=emp.id,
-            full_name=emp.person.full_name,
-            employee_code=emp.employee_code,
+            person_id=person.id,
+            person_type=person_type,
+            full_name=person.full_name,
+            code=code,
             confidence=confidence,
             message=f"Recognized ({winner_votes}/10 close samples, dist={winner_dist:.4f})",
         )
 
-    async def delete_encodings(self, employee_id: uuid.UUID) -> None:
-        await self.enc_repo.delete_by_employee(employee_id)
+    async def delete_encodings(self, person_id: uuid.UUID) -> None:
+        await self.enc_repo.delete_by_person(person_id)
 
-    async def get_status(self, employee_id: uuid.UUID) -> FaceStatusResponse:
-        emp = await self.emp_repo.get(employee_id)
-        if not emp:
-            raise HTTPException(status_code=404, detail="Employee not found")
+    async def get_status(self, person_id: uuid.UUID) -> FaceStatusResponse:
+        person = await self.person_repo.get_attendee(person_id)
+        if not person:
+            raise HTTPException(status_code=404, detail="Person not found")
 
-        samples = await self.enc_repo.count_by_employee(employee_id)
+        samples = await self.enc_repo.count_by_person(person_id)
         return FaceStatusResponse(
-            employee_id=employee_id,
+            person_id=person_id,
             enrolled=samples > 0,
             samples=samples,
         )

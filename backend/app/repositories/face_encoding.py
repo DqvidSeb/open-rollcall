@@ -9,24 +9,24 @@ from app.repositories.base import BaseRepository
 class FaceEncodingRepository(BaseRepository[FaceEncoding]):
     model = FaceEncoding
 
-    async def get_by_employee(self, employee_id: uuid.UUID) -> list[FaceEncoding]:
+    async def get_by_person(self, person_id: uuid.UUID) -> list[FaceEncoding]:
         result = await self.db.execute(
             select(FaceEncoding)
-            .where(FaceEncoding.employee_id == employee_id)
+            .where(FaceEncoding.person_id == person_id)
             .order_by(FaceEncoding.sample_index)
         )
         return list(result.scalars().all())
 
-    async def count_by_employee(self, employee_id: uuid.UUID) -> int:
+    async def count_by_person(self, person_id: uuid.UUID) -> int:
         result = await self.db.execute(
             select(func.count())
             .select_from(FaceEncoding)
-            .where(FaceEncoding.employee_id == employee_id)
+            .where(FaceEncoding.person_id == person_id)
         )
         return int(result.scalar_one())
 
-    async def delete_by_employee(self, employee_id: uuid.UUID) -> None:
-        encodings = await self.get_by_employee(employee_id)
+    async def delete_by_person(self, person_id: uuid.UUID) -> None:
+        encodings = await self.get_by_person(person_id)
         for enc in encodings:
             await self.db.delete(enc)
         await self.db.flush()

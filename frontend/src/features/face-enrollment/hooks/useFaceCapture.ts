@@ -11,7 +11,7 @@ import {
 import type { CapturedSample, CapturePhase, FaceEnrollResult } from '../types';
 
 interface UseFaceCaptureOptions {
-  employeeId: string;
+  personId: string;
   videoRef:   React.RefObject<HTMLVideoElement | null>;
   /** True once the camera stream is attached and playing. */
   cameraReady: boolean;
@@ -34,7 +34,7 @@ interface UseFaceCaptureResult {
  * repeat for each angle → upload to the backend.
  */
 export function useFaceCapture({
-  employeeId, videoRef, cameraReady, onEnrolled,
+  personId, videoRef, cameraReady, onEnrolled,
 }: UseFaceCaptureOptions): UseFaceCaptureResult {
   const [phase, setPhase]             = useState<CapturePhase>('requesting-camera');
   const [currentStep, setCurrentStep] = useState(0);
@@ -115,7 +115,7 @@ export function useFaceCapture({
         const images = samplesRef.current
           .sort((a, b) => a.index - b.index)
           .map(s => s.base64);
-        const result = await faceEnrollmentService.enroll(employeeId, images);
+        const result = await faceEnrollmentService.enroll(personId, images);
         if (cancelled) return;
         setPhase('success');
         onEnrolled(result);
@@ -129,7 +129,7 @@ export function useFaceCapture({
 
     upload();
     return () => { cancelled = true; };
-  }, [phase, employeeId, onEnrolled]);
+  }, [phase, personId, onEnrolled]);
 
   const retry = useCallback(() => {
     samplesRef.current = [];

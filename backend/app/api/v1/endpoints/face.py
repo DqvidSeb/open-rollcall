@@ -18,7 +18,7 @@ from app.schemas.face import (
     FaceVerifyRequest,
     FaceVerifyResponse,
 )
-from app.repositories.employee import EmployeeRepository
+from app.repositories.person import PersonRepository
 from app.services.attendance_service import AttendanceService
 from app.services.face_service import FaceService
 
@@ -36,23 +36,25 @@ def _safe(fn, default=None):
         return default
 
 
-def _build_attendance_read(attendance, employee) -> AttendanceRead:
+def _build_attendance_read(attendance, person) -> AttendanceRead:
     """
-    Construye un `AttendanceRead` enriquecido con datos del empleado y la
-    persona.
+    Construye un `AttendanceRead` enriquecido con datos de la persona
+    (empleado o estudiante) que generó el evento.
 
-    si UN campo opcional explota, NO debe tumbar la respuesta. Los
+    Si UN campo opcional explota, NO debe tumbar la respuesta. Los
     unicos campos obligatorios son los del `attendance` (id, event_type, etc.)
     """
-    person = _safe(lambda: employee.person if employee else None)
-    department = _safe(lambda: employee.department if employee else None)
-    position = _safe(lambda: employee.position if employee else None)
+    employee = _safe(lambda: person.employee if person else None)
+    student = _safe(lambda: person.student if person else None)
 
-    def _status_value():
-        st = _safe(lambda: employee.status if employee else None)
-        if st is None:
-            return None
-        return getattr(st, "value", None) or str(st)
+    person_type: str | None = None
+    code: str | None = None
+    if employee is not None:
+        person_type = "employee"
+        code = _safe(lambda: employee.employee_code)
+    elif student is not None:
+        person_type = "student"
+        code = _safe(lambda: student.student_code)
 
     def _hire_date_iso():
         hd = _safe(lambda: employee.hire_date if employee else None)
@@ -63,6 +65,21 @@ def _build_attendance_read(attendance, employee) -> AttendanceRead:
         except Exception:  # noqa: BLE001
             return str(hd)
 
+    def _enrollment_date_iso():
+        ed = _safe(lambda: student.enrollment_date if student else None)
+        if ed is None:
+            return None
+        try:
+            return ed.isoformat()
+        except Exception:  # noqa: BLE001
+            return str(ed)
+
+    def _employee_status_value():
+        st = _safe(lambda: employee.status if employee else None)
+        if st is None:
+            return None
+        return getattr(st, "value", None) or str(st)
+
     return AttendanceRead(
         id=attendance.id,
         event_type=attendance.event_type,
@@ -70,41 +87,47 @@ def _build_attendance_read(attendance, employee) -> AttendanceRead:
         event_time=attendance.event_time,
         confidence=_safe(lambda: attendance.confidence),
         notes=_safe(lambda: attendance.notes),
-        employee_id=attendance.employee_id,
-        employee_code=_safe(lambda: employee.employee_code if employee else None),
+        person_id=attendance.person_id,
+        person_type=person_type,
+        code=code,
         full_name=_safe(lambda: person.full_name if person else None),
         first_name=_safe(lambda: person.first_name if person else None),
         last_name=_safe(lambda: person.last_name if person else None),
         email=_safe(lambda: person.email if person else None),
         phone=_safe(lambda: person.phone if person else None),
-        department=_safe(lambda: department.name if department else None),
-        position=_safe(lambda: position.name if position else None),
-        status=_status_value(),
+        department=_safe(lambda: employee.department.name if employee and employee.department else None),
+        position=_safe(lambda: employee.position.name if employee and employee.position else None),
+        status=_employee_status_value(),
         hire_date=_hire_date_iso(),
+        academic_program=_safe(
+            lambda: student.academic_program.name if student and student.academic_program else None
+        ),
+        grade_level=_safe(lambda: student.grade_level if student else None),
+        enrollment_date=_enrollment_date_iso(),
     )
 
 
 @router.post(
-    "/enroll/{employee_id}",
+    "/enroll/{person_id}",
     response_model=FaceEnrollResponse,
     status_code=201,
-    summary="Registrar rostro de un empleado",
+    summary="Registrar rostro de un empleado o estudiante",
 )
 async def enroll_face(
-    employee_id: uuid.UUID,
+    person_id: uuid.UUID,
     body: EnrollBody,
     db: DbSession,
     _: CurrentUserId,
 ) -> FaceEnrollResponse:
     """
-    Recibe entre 1 y N imágenes base64 del rostro del empleado.
-    Extrae embeddings con DeepFace (ArcFace) y los guarda en PostgreSQL.
-    Elimina encodings previos antes de guardar los nuevos.
+    Recibe entre 1 y N imágenes base64 del rostro de la persona (empleado o
+    estudiante). Extrae embeddings con DeepFace (ArcFace) y los guarda en
+    PostgreSQL. Elimina encodings previos antes de guardar los nuevos.
     """
     service = FaceService(db)
-    samples = await service.enroll(employee_id, body.images_base64)
+    samples = await service.enroll(person_id, body.images_base64)
     return FaceEnrollResponse(
-        employee_id=employee_id,
+        person_id=person_id,
         samples_captured=samples,
         message=f"Face enrolled successfully with {samples} sample(s)",
     )
@@ -139,12 +162,12 @@ async def check_in(
     """
     Pipeline completo:
       1. Extrae embedding del frame recibido.
-      2. Busca al empleado en la DB por similitud coseno.
+      2. Busca a la persona (empleado o estudiante) en la DB por similitud coseno.
       3. Registra check_in o check_out según corresponda.
     """
     face_svc = FaceService(db)
     att_svc = AttendanceService(db)
-    emp_repo = EmployeeRepository(db)
+    person_repo = PersonRepository(db)
 
     # Envuelto cada paso para que cualquier excepcion inesperada salga al
     # log del servidor con contexto y se convierta en un 500 con detalle
@@ -168,13 +191,13 @@ async def check_in(
         ) from exc
 
     try:
-        employee = await emp_repo.get_with_person(attendance.employee_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("check_in: emp_repo.get_with_person crashed")
-        employee = None  # construimos la respuesta sin enriquecimiento
+        person = await person_repo.get_attendee(attendance.person_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("check_in: person_repo.get_attendee crashed")
+        person = None  # construimos la respuesta sin enriquecimiento
 
     try:
-        return _build_attendance_read(attendance, employee)
+        return _build_attendance_read(attendance, person)
     except Exception as exc:  # noqa: BLE001
         logger.exception("check_in: _build_attendance_read crashed")
         raise HTTPException(
@@ -183,28 +206,28 @@ async def check_in(
 
 
 @router.get(
-    "/status/{employee_id}",
+    "/status/{person_id}",
     response_model=FaceStatusResponse,
-    summary="Consultar si un empleado tiene rostro registrado",
+    summary="Consultar si una persona tiene rostro registrado",
 )
 async def get_face_status(
-    employee_id: uuid.UUID,
+    person_id: uuid.UUID,
     db: DbSession,
     _: CurrentUserId,
 ) -> FaceStatusResponse:
     service = FaceService(db)
-    return await service.get_status(employee_id)
+    return await service.get_status(person_id)
 
 
 @router.delete(
-    "/encodings/{employee_id}",
+    "/encodings/{person_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Eliminar todos los encodings de un empleado",
+    summary="Eliminar todos los encodings de una persona",
 )
 async def delete_encodings(
-    employee_id: uuid.UUID,
+    person_id: uuid.UUID,
     db: DbSession,
     _: CurrentUserId,
 ) -> None:
     service = FaceService(db)
-    await service.delete_encodings(employee_id)
+    await service.delete_encodings(person_id)

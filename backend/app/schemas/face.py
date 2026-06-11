@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+PersonType = Literal["employee", "student"]
 
 
 class EnrollBody(BaseModel):
@@ -9,7 +13,7 @@ class EnrollBody(BaseModel):
 
 
 class FaceEnrollResponse(BaseModel):
-    employee_id: uuid.UUID
+    person_id: uuid.UUID
     samples_captured: int
     message: str
 
@@ -20,14 +24,15 @@ class FaceVerifyRequest(BaseModel):
 
 class FaceVerifyResponse(BaseModel):
     recognized: bool
-    employee_id: uuid.UUID | None = None
+    person_id: uuid.UUID | None = None
+    person_type: PersonType | None = None
     full_name: str | None = None
-    employee_code: str | None = None
+    code: str | None = None
     confidence: float | None = None
     message: str
 
 
 class FaceStatusResponse(BaseModel):
-    employee_id: uuid.UUID
+    person_id: uuid.UUID
     enrolled: bool
     samples: int

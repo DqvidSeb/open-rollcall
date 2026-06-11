@@ -12,26 +12,26 @@ interface UseFaceEnrollmentStatusResult {
 }
 
 /**
- * Fetches whether the given employee already has a face registered.
- * Pass `null` to skip fetching (e.g. for non-employee persons).
+ * Fetches whether the given person (employee or student) already has a
+ * face registered. Pass `null` to skip fetching.
  */
-export function useFaceEnrollmentStatus(employeeId: string | null): UseFaceEnrollmentStatusResult {
+export function useFaceEnrollmentStatus(personId: string | null): UseFaceEnrollmentStatusResult {
   const [status, setStatus]       = useState<FaceStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
-    if (!employeeId) return;
+    if (!personId) return;
     setIsLoading(true);
     setError(null);
     try {
-      setStatus(await faceEnrollmentService.getStatus(employeeId));
+      setStatus(await faceEnrollmentService.getStatus(personId));
     } catch {
       setError('status-error');
     } finally {
       setIsLoading(false);
     }
-  }, [employeeId]);
+  }, [personId]);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 

@@ -1,13 +1,13 @@
 /** Mirrors backend app/schemas/face.py → FaceStatusResponse */
 export interface FaceStatus {
-  employee_id: string;
+  person_id: string;
   enrolled: boolean;
   samples: number;
 }
 
 /** Mirrors backend app/schemas/face.py → FaceEnrollResponse */
 export interface FaceEnrollResult {
-  employee_id: string;
+  person_id: string;
   samples_captured: number;
   message: string;
 }

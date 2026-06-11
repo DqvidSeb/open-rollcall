@@ -107,6 +107,46 @@ docker compose down -v
 
 ---
 
+## Despliegue del backend con Docker
+
+El `Dockerfile` de esta carpeta construye la API en una imagen multi-stage basada en `python:3.11-slim`, incluyendo las dependencias del sistema necesarias para DeepFace/dlib.
+
+### Build y ejecución individual
+
+```bash
+cd backend
+
+# Construir la imagen
+docker build -t rollcall-backend .
+
+# Ejecutar el contenedor (la BD debe estar accesible desde POSTGRES_HOST)
+docker run -d \
+  --name rollcall_backend \
+  --env-file .env \
+  -p 8000:8000 \
+  -v deepface_models:/home/appuser/.deepface \
+  rollcall-backend
+```
+
+> Si la base de datos también corre en Docker, asegúrate de que el contenedor del backend esté en la misma red de Docker, o usa `docker compose` (ver más abajo), donde `POSTGRES_HOST=db` resuelve automáticamente al servicio de la BD.
+
+### Como parte del stack completo
+
+El `docker-compose.example.yml` de la raíz del repositorio define los servicios `db`, `backend` y `frontend` juntos. Ver [`../README.md`](../README.md) para el procedimiento completo (Windows y Linux).
+
+```bash
+# Desde la raíz del repositorio
+docker compose up -d --build backend
+```
+
+Tras levantar el contenedor, aplica las migraciones dentro de él:
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+---
+
 ## Entorno Python
 
 Todos los comandos siguientes se ejecutan **dentro de la carpeta `backend/`**.
@@ -209,13 +249,16 @@ Usa `ESC` para cerrar la ventana de cámara.
 
 ## Consolas necesarias en desarrollo
 
-El sistema requiere tres procesos corriendo simultáneamente, cada uno en su propia terminal:
+El sistema requiere varios procesos corriendo simultáneamente, cada uno en su propia terminal:
 
 ```
 Terminal 1 (raíz del repo)  →  docker compose up -d db
 Terminal 2 (backend/)       →  uvicorn app.main:app --reload
-Terminal 3 (backend/)       →  python camera_client.py attend
+Terminal 3 (frontend/)      →  pnpm dev
+Terminal 4 (backend/)       →  python camera_client.py attend
 ```
+
+> El cliente de cámara (Terminal 4) es opcional en desarrollo si solo vas a probar la API o el frontend con datos de prueba.
 
 ---
 

@@ -2,7 +2,8 @@
 export interface AttendanceCheckResult {
   event_type: 'check_in' | 'check_out';
   full_name: string | null;
-  employee_code: string | null;
+  person_type: 'employee' | 'student' | null;
+  code: string | null;
   confidence: number | null;
   event_time: string;
 }

@@ -452,7 +452,7 @@ export function PersonDetailsSheet({ open, person, onClose, onUpdated, onDeleted
           )}
 
           {person && (personType === 'employee' || personType === 'student') && (
-            <FaceEnrollmentSection personType={personType} employeeId={person.id} />
+            <FaceEnrollmentSection personId={person.id} />
           )}
         </div>
 

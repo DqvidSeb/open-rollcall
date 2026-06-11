@@ -9,6 +9,7 @@
     "people": "Personas",
     "departments": "Departamentos",
     "positions": "Posiciones",
+    "academicPrograms": "Programas académicos",
     "settings": "Configuración",
     "helpCenter": "Centro de ayuda",
     "darkTheme": "Tema oscuro",
@@ -17,6 +18,7 @@
     "userMenu": "Menú de usuario",
     "logout": "Cerrar sesión",
     "sectionMain": "Principal",
+    "sectionStudents": "Estudiantes",
     "sectionEmployees": "Empleados"
   },
   "Common": {
@@ -224,7 +226,6 @@
         "registerButton": "Registrar datos faciales",
         "statusLoading": "Verificando registro facial...",
         "statusEnrolled": "Datos faciales registrados ({count} muestras)",
-        "studentComingSoon": "El reconocimiento facial para estudiantes estará disponible próximamente.",
         "infoTitle": "Registrar datos faciales",
         "infoBody": "Te guiaremos para tomar 5 fotos rápidas desde diferentes ángulos. Esto toma alrededor de un minuto.",
         "tips": {
@@ -313,6 +314,35 @@
       "savingButton": "Guardando…",
       "deleteConfirmTitle": "Eliminar posición",
       "deleteConfirmText": "¿Estás seguro que deseas eliminar esta posición?",
+      "deleteConfirmButton": "Eliminar"
+    }
+  },
+  "AcademicPrograms": {
+    "title": "Programas académicos",
+    "addButton": "Nuevo programa",
+    "colName": "Nombre",
+    "colDescription": "Descripción",
+    "colCreated": "Creado",
+    "colUpdated": "Actualizado",
+    "emptyTitle": "Aún no hay programas académicos",
+    "emptyDescription": "Crea tu primer programa académico para comenzar.",
+    "pagination": "Página {page} de {total} · {count} registros",
+    "form": {
+      "createTitle": "Nuevo programa académico",
+      "createDescription": "Agrega un programa académico para asignar a estudiantes.",
+      "nameLabel": "Nombre",
+      "descriptionLabel": "Descripción",
+      "cancelButton": "Cancelar",
+      "submitButton": "Crear programa",
+      "submittingButton": "Creando…",
+      "errorGeneric": "No se pudo guardar el programa académico. Verifica los campos e inténtalo de nuevo.",
+      "detailsTitle": "Detalles del programa académico",
+      "editButton": "Editar",
+      "deleteButton": "Eliminar",
+      "saveButton": "Guardar cambios",
+      "savingButton": "Guardando…",
+      "deleteConfirmTitle": "Eliminar programa académico",
+      "deleteConfirmText": "¿Estás seguro que deseas eliminar este programa académico?",
       "deleteConfirmButton": "Eliminar"
     }
   },

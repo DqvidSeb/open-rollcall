@@ -68,8 +68,8 @@ export function AttendanceResultPanel({ phase, result, message }: AttendanceResu
             <span style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>{result.full_name ?? '—'}</span>
             <span style={{ fontSize: '13px', fontWeight: 700, color }}>{time}</span>
           </div>
-          {result.employee_code && (
-            <span style={{ fontSize: '12px', color: '#a3a3a3' }}>{t('codeLabel')}: {result.employee_code}</span>
+          {result.code && (
+            <span style={{ fontSize: '12px', color: '#a3a3a3' }}>{t('codeLabel')}: {result.code}</span>
           )}
         </div>
       </div>

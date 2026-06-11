@@ -62,16 +62,6 @@ class Employee(Base, TimestampMixin):
     position: Mapped["Position | None"] = relationship(  # noqa: F821
         "Position", back_populates="employees"
     )
-    face_encodings: Mapped[list["FaceEncoding"]] = relationship(  # noqa: F821
-        "FaceEncoding", back_populates="employee", cascade="all, delete-orphan"
-    )
-    attendance_logs: Mapped[list["AttendanceLog"]] = relationship(  # noqa: F821
-        "AttendanceLog", back_populates="employee", cascade="all, delete-orphan"
-    )
-
-    @property
-    def is_enrolled(self) -> bool:
-        return len(self.face_encodings) > 0
 
     def __repr__(self) -> str:
         return f"<Employee id={self.id} code={self.employee_code!r}>"

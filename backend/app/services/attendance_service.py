@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.attendance_log import AttendanceLog, AttendanceMethod, EventType
 from app.models.schedule import Schedule
 from app.repositories.attendance import AttendanceRepository
-from app.repositories.employee import EmployeeRepository
+from app.repositories.person import PersonRepository
 from app.repositories.schedule import ScheduleRepository
 from app.schemas.attendance import AttendanceManualCreate, AttendanceSummary
 from app.schemas.face import FaceVerifyResponse
@@ -42,7 +42,7 @@ def _classify_event(now_local: datetime, schedule: Schedule) -> EventType | None
 class AttendanceService:
     def __init__(self, db: AsyncSession) -> None:
         self.att_repo = AttendanceRepository(db)
-        self.emp_repo = EmployeeRepository(db)
+        self.person_repo = PersonRepository(db)
         self.sch_repo = ScheduleRepository(db)
 
     async def _get_active_schedule(self) -> Schedule:
@@ -67,15 +67,15 @@ class AttendanceService:
              de la ventana de check-in o check-out configurada.
         """
         # ── 1. Verificar reconocimiento ───────────────────────────────────────
-        if not verify_result.recognized or not verify_result.employee_id:
+        if not verify_result.recognized or not verify_result.person_id:
             detail = verify_result.message or "Cannot record attendance for unrecognized person"
             raise HTTPException(status_code=422, detail=detail)
 
-        eid = verify_result.employee_id
+        pid = verify_result.person_id
 
         # ── 2. Verificar eventos del día ──────────────────────────────────────
-        existing_in = await self.att_repo.get_today_event(eid, EventType.CHECK_IN)
-        existing_out = await self.att_repo.get_today_event(eid, EventType.CHECK_OUT)
+        existing_in = await self.att_repo.get_today_event(pid, EventType.CHECK_IN)
+        existing_out = await self.att_repo.get_today_event(pid, EventType.CHECK_OUT)
 
         if existing_in and existing_out:
             last = existing_out.event_time.isoformat() if existing_out.event_time else ""
@@ -113,7 +113,7 @@ class AttendanceService:
         resolved_type = event_type if event_type == expected_type else expected_type
 
         log = AttendanceLog(
-            employee_id=eid,
+            person_id=pid,
             event_type=resolved_type,
             method=AttendanceMethod.FACE_RECOGNITION,
             event_time=datetime.now(UTC),
@@ -123,11 +123,11 @@ class AttendanceService:
         return await self.att_repo.create(log)
 
     async def record_manual(self, data: AttendanceManualCreate, recorded_by: uuid.UUID) -> AttendanceLog:
-        emp = await self.emp_repo.get_with_person(data.employee_id)
-        if not emp:
-            raise HTTPException(status_code=404, detail="Employee not found")
+        person = await self.person_repo.get_attendee(data.person_id)
+        if not person:
+            raise HTTPException(status_code=404, detail="Person not found")
         log = AttendanceLog(
-            employee_id=data.employee_id,
+            person_id=data.person_id,
             event_type=data.event_type,
             method=AttendanceMethod.MANUAL,
             event_time=data.event_time or datetime.now(UTC),
@@ -137,29 +137,33 @@ class AttendanceService:
         return await self.att_repo.create(log)
 
     async def get_daily_summary(self, target_date: date) -> list[AttendanceSummary]:
+        from app.services.face_service import _person_type_and_code
+
         records = await self.att_repo.list_by_date(target_date)
-        by_emp: dict[uuid.UUID, dict] = {}
+        by_person: dict[uuid.UUID, dict] = {}
         for att in records:
-            eid = att.employee_id
-            if eid not in by_emp:
-                by_emp[eid] = {"check_in": None, "check_out": None}
-            if att.event_type == EventType.CHECK_IN and not by_emp[eid]["check_in"]:
-                by_emp[eid]["check_in"] = att.event_time
+            pid = att.person_id
+            if pid not in by_person:
+                by_person[pid] = {"check_in": None, "check_out": None}
+            if att.event_type == EventType.CHECK_IN and not by_person[pid]["check_in"]:
+                by_person[pid]["check_in"] = att.event_time
             elif att.event_type == EventType.CHECK_OUT:
-                by_emp[eid]["check_out"] = att.event_time
+                by_person[pid]["check_out"] = att.event_time
 
         summaries = []
-        for eid, times in by_emp.items():
-            emp = await self.emp_repo.get_with_person(eid)
-            if not emp:
+        for pid, times in by_person.items():
+            person = await self.person_repo.get_attendee(pid)
+            if not person:
                 continue
+            person_type, code = _person_type_and_code(person)
             total_hours = None
             if times["check_in"] and times["check_out"]:
                 total_hours = round((times["check_out"] - times["check_in"]).total_seconds() / 3600, 2)
             summaries.append(AttendanceSummary(
-                employee_id=eid,
-                full_name=emp.person.full_name,
-                employee_code=emp.employee_code,
+                person_id=pid,
+                person_type=person_type,
+                full_name=person.full_name,
+                code=code or "",
                 date=target_date.isoformat(),
                 check_in_time=times["check_in"],
                 check_out_time=times["check_out"],
@@ -167,10 +171,10 @@ class AttendanceService:
             ))
         return summaries
 
-    async def list_by_employee(self, employee_id: uuid.UUID, *, date_from=None,
-                                date_to=None, offset=0, limit=50):
-        items = await self.att_repo.list_by_employee(
-            employee_id, date_from=date_from, date_to=date_to, offset=offset, limit=limit)
-        total = await self.att_repo.count_by_employee(
-            employee_id, date_from=date_from, date_to=date_to)
+    async def list_by_person(self, person_id: uuid.UUID, *, date_from=None,
+                              date_to=None, offset=0, limit=50):
+        items = await self.att_repo.list_by_person(
+            person_id, date_from=date_from, date_to=date_to, offset=offset, limit=limit)
+        total = await self.att_repo.count_by_person(
+            person_id, date_from=date_from, date_to=date_to)
         return items, total

@@ -26,6 +26,23 @@ class PersonRepository(BaseRepository[Person]):
         )
         return result.scalar_one_or_none()
 
+    async def get_attendee(self, id: uuid.UUID) -> Person | None:
+        """Carga una `Person` (employee o student) con las relaciones necesarias
+        para reconocimiento facial y registro de asistencia: encodings faciales
+        y los detalles propios de su especialización (departamento/posición o
+        programa académico)."""
+        result = await self.db.execute(
+            select(Person)
+            .options(
+                joinedload(Person.face_encodings),
+                joinedload(Person.employee).joinedload(Employee.department),
+                joinedload(Person.employee).joinedload(Employee.position),
+                joinedload(Person.student).joinedload(Student.academic_program),
+            )
+            .where(Person.id == id, self._active(), self.is_employee_or_student())
+        )
+        return result.unique().scalar_one_or_none()
+
     def is_employee_or_student(self):
         """Excludes plain `Person` records that only back a system `User`
         (admins/staff accounts) — the persons table only lists employees

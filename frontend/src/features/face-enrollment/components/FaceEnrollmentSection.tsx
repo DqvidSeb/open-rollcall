@@ -9,20 +9,18 @@ import { EnrollmentCameraModal } from './EnrollmentCameraModal';
 import type { FaceEnrollResult } from '../types';
 
 interface FaceEnrollmentSectionProps {
-  personType: 'employee' | 'student';
-  /** For employees this equals Person.id (1:1 specialization). */
-  employeeId: string;
+  /** Person.id — shared primary key with the employee/student specialization. */
+  personId: string;
 }
 
 /**
  * "Reconocimiento facial" section shown at the bottom of the person
- * details form. Lets an employee register their biometric face data.
+ * details form. Lets an employee or student register their biometric face data.
  */
-export function FaceEnrollmentSection({ personType, employeeId }: FaceEnrollmentSectionProps) {
+export function FaceEnrollmentSection({ personId }: FaceEnrollmentSectionProps) {
   const t = useTranslations('Persons.form.face');
-  const isEmployee = personType === 'employee';
 
-  const { status, isLoading, refetch } = useFaceEnrollmentStatus(isEmployee ? employeeId : null);
+  const { status, isLoading, refetch } = useFaceEnrollmentStatus(personId);
   const [showInfo, setShowInfo]     = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
@@ -36,15 +34,11 @@ export function FaceEnrollmentSection({ personType, employeeId }: FaceEnrollment
         {t('sectionTitle')}
       </h3>
 
-      {!isEmployee && (
-        <p style={{ fontSize: '12.5px', color: 'var(--ct-secondary)' }}>{t('studentComingSoon')}</p>
-      )}
-
-      {isEmployee && isLoading && (
+      {isLoading && (
         <p style={{ fontSize: '12.5px', color: 'var(--ct-secondary)' }}>{t('statusLoading')}</p>
       )}
 
-      {isEmployee && !isLoading && status?.enrolled && (
+      {!isLoading && status?.enrolled && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <CheckCircle size={18} weight="fill" color="#22c55e" />
           <span style={{ fontSize: '12.5px', color: 'var(--ct-secondary)' }}>
@@ -53,7 +47,7 @@ export function FaceEnrollmentSection({ personType, employeeId }: FaceEnrollment
         </div>
       )}
 
-      {isEmployee && !isLoading && status && !status.enrolled && (
+      {!isLoading && status && !status.enrolled && (
         <button
           type="button"
           onClick={() => setShowInfo(true)}
@@ -86,7 +80,7 @@ export function FaceEnrollmentSection({ personType, employeeId }: FaceEnrollment
 
       <EnrollmentCameraModal
         open={showCamera}
-        employeeId={employeeId}
+        personId={personId}
         onClose={() => setShowCamera(false)}
         onEnrolled={handleEnrolled}
       />

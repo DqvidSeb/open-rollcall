@@ -2,8 +2,8 @@
 """
 RollCall - Cliente de Cámara
 ============================
-Modo enrollar  : python camera_client.py enroll <employee_id>
-Modo asistencia: python camera_client.py attend [--camera INDEX]
+Modo enrollar  : python camera_client.py enroll <person_id>  (UUID de empleado o estudiante)
+Modo asistencia: python camera_client.py attend [--camera INDEX]  (reconoce empleados y estudiantes)
 
 Dependencias:
     pip install opencv-python requests python-dotenv mediapipe numpy
@@ -330,7 +330,7 @@ def encode_frame(frame: np.ndarray, quality: int = 90) -> str:
 
 class ConsecutiveVoter:
     """
-    Acumula reconocimientos y dispara solo cuando el mismo employee_id
+    Acumula reconocimientos y dispara solo cuando el mismo person_id
     aparece VOTE_NEEDED veces dentro de una ventana de VOTE_WINDOW intentos.
     """
 
@@ -339,11 +339,11 @@ class ConsecutiveVoter:
         self._window = window
         self._history: deque[str | None] = deque(maxlen=window)
 
-    def vote(self, employee_id: str | None) -> bool:
-        self._history.append(employee_id)
-        if employee_id is None:
+    def vote(self, person_id: str | None) -> bool:
+        self._history.append(person_id)
+        if person_id is None:
             return False
-        return self._history.count(employee_id) >= self._needed
+        return self._history.count(person_id) >= self._needed
 
     def reset(self) -> None:
         self._history.clear()
@@ -927,7 +927,7 @@ ANGLE_GUIDES = [
 ]
 
 
-def run_enrollment(employee_id: str, auth: AuthSession, camera_index: int = -1) -> None:
+def run_enrollment(person_id: str, auth: AuthSession, camera_index: int = -1) -> None:
     cap = open_camera(camera_index)
     detector = make_detector()
     tracker  = FaceTracker()
@@ -938,7 +938,7 @@ def run_enrollment(employee_id: str, auth: AuthSession, camera_index: int = -1) 
     phase_delay  = ENROLL_INITIAL_DELAY
     last_metrics: dict = {}
 
-    print(f"\n[ENROLL] Empleado: {employee_id}")
+    print(f"\n[ENROLL] Persona: {person_id}")
     print(f"[ENROLL] {ENROLL_PHOTOS} fotos — {ENROLL_INITIAL_DELAY}s inicial, {ENROLL_BETWEEN_DELAY}s entre fotos")
     print("[ENROLL] Presiona ESC para cancelar.\n")
 
@@ -1081,7 +1081,7 @@ def run_enrollment(employee_id: str, auth: AuthSession, camera_index: int = -1) 
     print(f"\n[ENROLL] Enviando al servidor (puede tardar hasta {ENROLL_TIMEOUT_S}s la primera vez)...")
     try:
         resp = auth.post(
-            f"/face/enroll/{employee_id}",
+            f"/face/enroll/{person_id}",
             {"images_base64": images_b64},
             timeout=ENROLL_TIMEOUT_S,
         )
@@ -1396,7 +1396,7 @@ def _draw_result_overlay(
         color = C_GREEN if is_checkin else C_YELLOW
         icon  = "ENTRADA REGISTRADA" if is_checkin else "SALIDA REGISTRADA"
         name  = result.get("full_name", "")
-        code  = result.get("employee_code", "")
+        code  = result.get("code", "")
         conf  = result.get("confidence", 0.0)
         hhmm  = result.get("event_time_str", "")
 
@@ -1505,9 +1505,12 @@ def _print_full_person(data: dict, latency_ms: float, hora: datetime) -> None:
     print(f"  {arrow}    [{hora.strftime('%Y-%m-%d %H:%M:%S')} America/Bogota]")
     print(border)
     # Identidad
+    person_type = data.get("person_type")
+    type_label = {"employee": "Empleado", "student": "Estudiante"}.get(person_type, "Persona")
     print(f"  Nombre completo : {data.get('full_name') or '—'}")
-    print(f"  Codigo empleado : {data.get('employee_code') or '—'}")
-    print(f"  ID empleado     : {data.get('employee_id') or '—'}")
+    print(f"  Tipo            : {type_label}")
+    print(f"  Codigo          : {data.get('code') or '—'}")
+    print(f"  ID persona      : {data.get('person_id') or '—'}")
     # Datos extra cuando el backend los incluye (ver schema enriquecido).
     for label, key in (
         ("Email           ", "email"),
@@ -1516,6 +1519,9 @@ def _print_full_person(data: dict, latency_ms: float, hora: datetime) -> None:
         ("Cargo           ", "position"),
         ("Estado          ", "status"),
         ("Fecha ingreso   ", "hire_date"),
+        ("Programa        ", "academic_program"),
+        ("Grado           ", "grade_level"),
+        ("Fecha matricula ", "enrollment_date"),
     ):
         if data.get(key) is not None:
             print(f"  {label}: {data[key]}")
@@ -1561,7 +1567,7 @@ def _conf_to_dist(conf: float | None) -> float:
 def _handle_recognition_result(
     res: RecognitionResult,
     voter: ConsecutiveVoter,
-    last_per_emp: dict[str, float],
+    last_per_person: dict[str, float],
     hora: datetime,
 ) -> AttendHandleResult:
     """Procesa un RecognitionResult del worker y prepara overlay + diagnostico."""
@@ -1595,10 +1601,10 @@ def _handle_recognition_result(
 
     # ── Registro exitoso ─────────────────────────────────────────────────────
     if sc in (200, 201):
-        emp_id     = str(data.get("employee_id", ""))
+        person_id  = str(data.get("person_id", ""))
         confidence = float(data.get("confidence") or 0.0)
         full_name  = data.get("full_name") or "—"
-        code       = data.get("employee_code") or "—"
+        code       = data.get("code") or "—"
         event      = data.get("event_type", "check_in")
 
         diag = {
@@ -1617,11 +1623,11 @@ def _handle_recognition_result(
             f"latency={latency_ms:.0f}ms"
         )
 
-        if emp_id and confidence >= CONFIDENCE_MIN:
-            if voter.vote(emp_id):
-                cooldown_ok = (now_ts - last_per_emp.get(emp_id, 0)) >= COOLDOWN_S
+        if person_id and confidence >= CONFIDENCE_MIN:
+            if voter.vote(person_id):
+                cooldown_ok = (now_ts - last_per_person.get(person_id, 0)) >= COOLDOWN_S
                 if cooldown_ok:
-                    last_per_emp[emp_id] = now_ts
+                    last_per_person[person_id] = now_ts
                     voter.reset()
                     _print_full_person(data, latency_ms, hora)
                     _success_beep(is_checkin=(event == "check_in"))
@@ -1629,9 +1635,10 @@ def _handle_recognition_result(
                     return AttendHandleResult(
                         overlay={
                             "recognized": True,
-                            "employee_id": emp_id,
+                            "person_id": person_id,
+                            "person_type": data.get("person_type"),
                             "full_name": full_name,
-                            "employee_code": code,
+                            "code": code,
                             "event_type": event,
                             "confidence": confidence,
                             "event_time_str": hora.strftime("%H:%M:%S"),
@@ -1757,7 +1764,7 @@ def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
     worker.start()
 
     last_submit_ts: float = 0.0
-    last_per_emp: dict[str, float] = {}
+    last_per_person: dict[str, float] = {}
     last_result:  Optional[dict]   = None
     result_started_at: float = 0.0  # cuando se mostro por primera vez
     result_until: float = 0.0
@@ -1789,7 +1796,7 @@ def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
                 res = worker.poll()
                 if res is None:
                     break
-                hr = _handle_recognition_result(res, voter, last_per_emp, hora)
+                hr = _handle_recognition_result(res, voter, last_per_person, hora)
                 if hr.overlay is not None:
                     last_result        = hr.overlay
                     result_started_at  = now_ts
@@ -1929,9 +1936,12 @@ def _print_verify_match(data: dict, latency_ms: float) -> None:
     print(f"\n{border}")
     print(f"  VERIFY — MATCH    [{now.strftime('%Y-%m-%d %H:%M:%S')} {_SCHEDULE_TZ_STR}]")
     print(border)
+    person_type = data.get("person_type")
+    type_label = {"employee": "Empleado", "student": "Estudiante"}.get(person_type, "Persona")
     print(f"  Nombre completo : {data.get('full_name') or '—'}")
-    print(f"  Codigo empleado : {data.get('employee_code') or '—'}")
-    print(f"  ID empleado     : {data.get('employee_id') or '—'}")
+    print(f"  Tipo            : {type_label}")
+    print(f"  Codigo          : {data.get('code') or '—'}")
+    print(f"  ID persona      : {data.get('person_id') or '—'}")
     print(f"  Confianza       : {conf:.2%}")
     print(f"  Distancia coseno: {dist:.4f}")
     if data.get("message"):
@@ -2132,12 +2142,12 @@ def main() -> None:
         ),
     )
     parser.add_argument("mode", choices=["enroll", "attend", "verify"])
-    parser.add_argument("employee_id", nargs="?")
+    parser.add_argument("person_id", nargs="?")
     parser.add_argument("--camera", type=int, default=-1)
     args = parser.parse_args()
 
-    if args.mode == "enroll" and not args.employee_id:
-        parser.error("El modo 'enroll' requiere employee_id.")
+    if args.mode == "enroll" and not args.person_id:
+        parser.error("El modo 'enroll' requiere person_id (UUID de un empleado o estudiante).")
 
     # ── Cargar horario activo desde la API (endpoint público, sin token) ─────
     # Si falla (backend caído, sin red) se usan los defaults del módulo.
@@ -2157,7 +2167,7 @@ def main() -> None:
 
     try:
         if args.mode == "enroll":
-            run_enrollment(args.employee_id, auth, args.camera)
+            run_enrollment(args.person_id, auth, args.camera)
         elif args.mode == "verify":
             run_verify(auth, args.camera)
         else:

@@ -51,12 +51,12 @@ async def daily_summary(
 
 
 @router.get(
-    "/employee/{employee_id}",
+    "/person/{person_id}",
     response_model=PaginatedAttendance,
-    summary="Historial de asistencia de un empleado",
+    summary="Historial de asistencia de una persona (empleado o estudiante)",
 )
-async def employee_attendance(
-    employee_id: uuid.UUID,
+async def person_attendance(
+    person_id: uuid.UUID,
     db: DbSession,
     _: CurrentUserId,
     date_from: datetime | None = Query(default=None),
@@ -66,8 +66,8 @@ async def employee_attendance(
 ) -> PaginatedAttendance:
     offset = (page - 1) * page_size
     service = AttendanceService(db)
-    items, total = await service.list_by_employee(
-        employee_id,
+    items, total = await service.list_by_person(
+        person_id,
         date_from=date_from,
         date_to=date_to,
         offset=offset,

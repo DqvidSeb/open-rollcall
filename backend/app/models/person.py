@@ -20,6 +20,16 @@ class Person(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     student: Mapped["Student | None"] = relationship(
         "Student", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
+    face_encodings: Mapped[list["FaceEncoding"]] = relationship(
+        "FaceEncoding", back_populates="person", cascade="all, delete-orphan"
+    )
+    attendance_logs: Mapped[list["AttendanceLog"]] = relationship(
+        "AttendanceLog", back_populates="person", cascade="all, delete-orphan"
+    )
+
+    @property
+    def is_enrolled(self) -> bool:
+        return len(self.face_encodings) > 0
 
     @property
     def full_name(self) -> str:

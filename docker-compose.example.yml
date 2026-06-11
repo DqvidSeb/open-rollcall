@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  # PostgreSQL 16 + pgvector
+  # ── PostgreSQL 18 + pgvector ────────────────────────────────────────────────
   db:
     image: pgvector/pgvector:pg18
     container_name: rollcall_db
@@ -20,5 +20,42 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── API REST (FastAPI) ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rollcall_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Dentro de la red de Docker, el host de la BD es el nombre del servicio
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # Cachea los pesos de ArcFace entre reinicios del contenedor
+      - deepface_models:/home/appuser/.deepface
+
+  # ── Frontend (Next.js) ──────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rollcall_frontend
+    restart: unless-stopped
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend
+    ports:
+      - "3020:3020"
+
 volumes:
   postgres_data:
+  deepface_models:
