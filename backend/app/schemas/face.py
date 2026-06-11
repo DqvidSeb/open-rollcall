@@ -10,6 +10,10 @@ PersonType = Literal["employee", "student"]
 
 class EnrollBody(BaseModel):
     images_base64: list[str] = Field(..., min_length=1)
+    # True solo cuando el cliente ya detecto, recorto y alineo el rostro
+    # (camera_client.py con YuNet). Los clientes web envian el frame completo
+    # y dejan la deteccion/alineacion al servidor.
+    pre_cropped: bool = False
 
 
 class FaceEnrollResponse(BaseModel):
@@ -20,6 +24,8 @@ class FaceEnrollResponse(BaseModel):
 
 class FaceVerifyRequest(BaseModel):
     image_base64: str
+    # Ver nota en EnrollBody: True = rostro ya recortado/alineado por el cliente.
+    pre_cropped: bool = False
 
 
 class FaceVerifyResponse(BaseModel):

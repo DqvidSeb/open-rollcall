@@ -125,7 +125,9 @@ async def enroll_face(
     PostgreSQL. Elimina encodings previos antes de guardar los nuevos.
     """
     service = FaceService(db)
-    samples = await service.enroll(person_id, body.images_base64)
+    samples = await service.enroll(
+        person_id, body.images_base64, pre_cropped=body.pre_cropped
+    )
     return FaceEnrollResponse(
         person_id=person_id,
         samples_captured=samples,
@@ -145,7 +147,7 @@ async def verify_face(
 ) -> FaceVerifyResponse:
     """Solo verifica — no registra asistencia. Hecho para previsualizar."""
     service = FaceService(db)
-    return await service.verify(body.image_base64)
+    return await service.verify(body.image_base64, pre_cropped=body.pre_cropped)
 
 
 @router.post(
@@ -173,7 +175,9 @@ async def check_in(
     # log del servidor con contexto y se convierta en un 500 con detalle
     # legible para el cliente (en vez del HTML genérico de FastAPI).
     try:
-        verify_result = await face_svc.verify(body.image_base64)
+        verify_result = await face_svc.verify(
+            body.image_base64, pre_cropped=body.pre_cropped
+        )
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001

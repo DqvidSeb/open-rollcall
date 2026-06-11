@@ -18,12 +18,10 @@ export function drawVideoFrame(video: HTMLVideoElement, canvas: HTMLCanvasElemen
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  // Mirror horizontally to match the preview (front camera selfie view).
-  ctx.save();
-  ctx.translate(CAPTURE_SIZE, 0);
-  ctx.scale(-1, 1);
+  // NOT mirrored: the preview mirrors via CSS (scaleX(-1)), but frames sent
+  // to the backend must match reality — ArcFace embeddings are not
+  // mirror-invariant, and the camera client also sends unmirrored faces.
   ctx.drawImage(video, sx, sy, side, side, 0, 0, CAPTURE_SIZE, CAPTURE_SIZE);
-  ctx.restore();
 }
 
 /** Returns the canvas contents as a base64 JPEG string (no data URL prefix). */

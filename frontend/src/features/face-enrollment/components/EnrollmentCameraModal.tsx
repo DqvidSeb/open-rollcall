@@ -96,8 +96,9 @@ export function EnrollmentCameraModal({ open, personId, onClose, onEnrolled }: E
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px',
               }}
             >
+              {/* Captured frames are unmirrored; mirror the thumbnail to match the selfie preview */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={thumbnail} alt="" style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '12px', border: '2px solid #fff' }} />
+              <img src={thumbnail} alt="" style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '12px', border: '2px solid #fff', transform: 'scaleX(-1)' }} />
               <CheckCircle size={28} weight="fill" color="#22c55e" />
               <span style={{ color: '#fff', fontSize: '13px' }}>{t('capturedLabel')}</span>
             </div>

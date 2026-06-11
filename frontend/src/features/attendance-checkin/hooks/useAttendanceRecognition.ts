@@ -71,6 +71,8 @@ export function useAttendanceRecognition({
           } else if (err.status === 409) {
             setMessage(err.message);
             setPhase('no-match');
+          } else if (err.status === 422 && /no face detected/i.test(err.message)) {
+            // Frame without a face: keep scanning silently, no UI pause.
           } else if (err.status === 422) {
             setPhase('no-match');
           } else {

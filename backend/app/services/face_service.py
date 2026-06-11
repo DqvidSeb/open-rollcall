@@ -90,15 +90,39 @@ class FaceService:
         self.enc_repo = FaceEncodingRepository(db)
         self.person_repo = PersonRepository(db)
 
-    def _extract_embedding(self, img) -> list[float]:
+    @staticmethod
+    def _resolve_detector(pre_cropped: bool) -> str:
+        """
+        Detector a usar segun el origen del frame.
+
+        - `pre_cropped=True`  → el cliente (camera_client.py) ya detecto,
+          recorto y alineo el rostro con YuNet. Detectar de nuevo seria
+          redundante y mas lento: se usa "skip".
+        - `pre_cropped=False` → el frame llega completo (clientes web).
+          El servidor DEBE detectar y alinear; embeber el frame entero
+          produce embeddings de la escena (fondo incluido) y matching
+          erratico. Si la config quedo en "skip", se usa "yunet" como
+          fallback seguro (mismo detector que usa el cliente de camara).
+        """
+        if pre_cropped:
+            return "skip"
+        configured = settings.FACE_DETECTOR_BACKEND.lower()
+        if configured == "skip":
+            logger.warning(
+                "FACE_DETECTOR_BACKEND=skip con frame sin pre-recortar; "
+                "usando 'yunet' como detector de servidor"
+            )
+            return "yunet"
+        return configured
+
+    def _extract_embedding(self, img, *, pre_cropped: bool) -> list[float]:
         DeepFace = _require_deepface()
-        # Si el detector es "skip" no hay que forzar deteccion: el cliente nos
-        # mandó la cara ya recortada y alineada. Igual evitamos re-alinear,
-        # porque ya viene alineada por landmarks de YuNet/MediaPipe en el
-        # cliente -> ahorra ~50ms adicionales por llamada.
-        detector_backend = settings.FACE_DETECTOR_BACKEND
-        is_skip = detector_backend.lower() == "skip"
-        enforce_detection = False if is_skip else settings.FACE_ENFORCE_DETECTION
+        detector_backend = self._resolve_detector(pre_cropped)
+        is_skip = detector_backend == "skip"
+        # Con deteccion en servidor exigimos que haya rostro: un frame sin
+        # cara debe responder 422 (el cliente lo trata como "sigue escaneando"),
+        # nunca producir un embedding de la escena completa.
+        enforce_detection = not is_skip
         align = not is_skip
         try:
             result = DeepFace.represent(
@@ -110,21 +134,49 @@ class FaceService:
             )
             if not result:
                 raise ValueError("No face detected")
-            return result[0]["embedding"]
+            # Si hay varias caras en el frame, nos quedamos con la de mayor
+            # area facial (la persona mas cercana a la camara) — practica
+            # estandar en kioscos de asistencia.
+            best = max(
+                result,
+                key=lambda r: (
+                    r.get("facial_area", {}).get("w", 0)
+                    * r.get("facial_area", {}).get("h", 0)
+                ),
+            )
+            return best["embedding"]
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            # DeepFace lanza ValueError cuando enforce_detection=True y no
+            # encuentra rostro. 422 = "frame sin cara", el cliente reintenta.
+            raise HTTPException(status_code=422, detail=f"No face detected: {exc}")
         except HTTPException:
             raise
         except Exception as exc:
             logger.error("DeepFace error: %s", exc)
             raise HTTPException(status_code=500, detail="Feature extraction failed")
 
-    async def enroll(self, person_id: uuid.UUID, images_b64: list[str]) -> int:
+    async def enroll(
+        self, person_id: uuid.UUID, images_b64: list[str], *, pre_cropped: bool = False
+    ) -> int:
         person = await self.person_repo.get_attendee(person_id)
         if not person:
             raise HTTPException(status_code=404, detail="Person not found")
 
-        embeddings = [self._extract_embedding(_b64_to_numpy(img)) for img in images_b64]
+        embeddings: list[list[float]] = []
+        for idx, img in enumerate(images_b64):
+            try:
+                embeddings.append(
+                    self._extract_embedding(_b64_to_numpy(img), pre_cropped=pre_cropped)
+                )
+            except HTTPException as exc:
+                if exc.status_code == 422:
+                    # Identifica la muestra fallida para que el cliente pueda
+                    # pedir retomar esa foto en vez de fallar genericamente.
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"No face detected in sample {idx + 1} of {len(images_b64)}",
+                    ) from exc
+                raise
         await self.enc_repo.delete_by_person(person_id)
 
         for idx, emb in enumerate(embeddings):
@@ -140,10 +192,13 @@ class FaceService:
         logger.info("Enrolled %d samples for person_id=%s", len(embeddings), person_id)
         return len(embeddings)
 
-    async def verify(self, image_b64: str) -> FaceVerifyResponse:
+    async def verify(
+        self, image_b64: str, *, pre_cropped: bool = False
+    ) -> FaceVerifyResponse:
         """
         Pipeline:
-          1. Extrae el embedding de la imagen recibida.
+          1. Extrae el embedding de la imagen recibida (detectando y alineando
+             el rostro en servidor si el cliente no lo pre-recorto).
           2. Trae los top_k vecinos mas cercanos SIN filtrar por threshold
              (para poder reportar la distancia real aun cuando no haya match).
           3. Vota por empleado: el ganador es quien tiene mas muestras dentro
@@ -151,7 +206,7 @@ class FaceService:
           4. Si nadie supera el threshold, devuelve `recognized=False` pero con
              la distancia y nombre del mas cercano -> diagnostico in situ.
         """
-        emb = self._extract_embedding(_b64_to_numpy(image_b64))
+        emb = self._extract_embedding(_b64_to_numpy(image_b64), pre_cropped=pre_cropped)
 
         # Sanity check de la dimension del embedding antes de tirarlo a
         # pgvector. ArcFace debe devolver 512. Si por alguna razon llega algo

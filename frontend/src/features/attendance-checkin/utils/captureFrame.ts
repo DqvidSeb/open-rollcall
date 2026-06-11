@@ -2,7 +2,11 @@ import { CAPTURE_HEIGHT, CAPTURE_WIDTH, JPEG_QUALITY } from '../constants';
 
 /**
  * Draws the current video frame into a wide (16:9) canvas, center-cropped
- * from the camera stream. Mirrored horizontally to match the selfie preview.
+ * from the camera stream.
+ *
+ * NOT mirrored: the on-screen preview mirrors via CSS (scaleX(-1)), but the
+ * frame sent to the backend must match reality — ArcFace embeddings are not
+ * mirror-invariant, and the camera client also sends unmirrored faces.
  */
 export function drawWideVideoFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
   const { videoWidth, videoHeight } = video;
@@ -30,11 +34,7 @@ export function drawWideVideoFrame(video: HTMLVideoElement, canvas: HTMLCanvasEl
   const ctx = canvas.getContext('2d');
   if (!ctx) return false;
 
-  ctx.save();
-  ctx.translate(CAPTURE_WIDTH, 0);
-  ctx.scale(-1, 1);
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
-  ctx.restore();
   return true;
 }
 

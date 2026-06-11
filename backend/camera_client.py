@@ -1082,7 +1082,9 @@ def run_enrollment(person_id: str, auth: AuthSession, camera_index: int = -1) ->
     try:
         resp = auth.post(
             f"/face/enroll/{person_id}",
-            {"images_base64": images_b64},
+            # pre_cropped: el rostro ya viene detectado, recortado y alineado
+            # por YuNet local — el servidor no debe re-detectar.
+            {"images_base64": images_b64, "pre_cropped": True},
             timeout=ENROLL_TIMEOUT_S,
         )
         if resp.status_code in (200, 201):
@@ -1757,7 +1759,10 @@ def run_attendance(auth: AuthSession, camera_index: int = -1) -> None:
     # Worker en hilo aparte: ninguna llamada HTTP bloquea el loop principal.
     worker = RecognitionWorker(
         send_fn=lambda b64: auth.post(
-            "/face/check-in", {"image_base64": b64}, timeout=ATTEND_TIMEOUT_S
+            "/face/check-in",
+            # pre_cropped: el rostro ya viene recortado/alineado por YuNet local.
+            {"image_base64": b64, "pre_cropped": True},
+            timeout=ATTEND_TIMEOUT_S,
         ),
         timeout_s=ATTEND_TIMEOUT_S,
     )
@@ -1971,7 +1976,10 @@ def run_verify(auth: AuthSession, camera_index: int = -1) -> None:
 
     worker = RecognitionWorker(
         send_fn=lambda b64: auth.post(
-            "/face/verify", {"image_base64": b64}, timeout=ATTEND_TIMEOUT_S
+            "/face/verify",
+            # pre_cropped: el rostro ya viene recortado/alineado por YuNet local.
+            {"image_base64": b64, "pre_cropped": True},
+            timeout=ATTEND_TIMEOUT_S,
         ),
         timeout_s=ATTEND_TIMEOUT_S,
     )
