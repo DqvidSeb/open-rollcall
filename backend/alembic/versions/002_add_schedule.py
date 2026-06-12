@@ -82,11 +82,11 @@ def upgrade() -> None:
             gen_random_uuid(),
             'Jornada Colombia',
             'Horario por defecto para instalaciones en Colombia. '
-            'Entrada: 08:00–12:00 | Salida: 14:00–23:59. '
+            'Entrada: 08:00–12:00 | Salida: 13:00–23:59. '
             'Modifique según las necesidades de su organización.',
             'America/Bogota',
             '08:00:00', '12:00:00',
-            '14:00:00', '23:59:59',
+            '13:00:00', '23:59:59',
             true
         )
     """)

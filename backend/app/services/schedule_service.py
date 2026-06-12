@@ -43,7 +43,7 @@ class ScheduleService:
         """
         Retorna el horario activo del sistema.
         Si no hay ninguno configurado, retorna un schedule por defecto
-        (Colombia, 08:00–12:00 / 14:00–23:59) para garantizar que
+        (Colombia, 08:00–12:00 / 13:00–23:59) para garantizar que
         camera_client siempre tenga una configuración válida.
         """
         from datetime import time
@@ -65,7 +65,7 @@ class ScheduleService:
             timezone="America/Bogota",
             check_in_start=time(8, 0),
             check_in_end=time(12, 0),
-            checkout_start=time(14, 0),
+            checkout_start=time(13, 0),
             checkout_end=time(23, 59, 59),
             is_active=False,
         )
