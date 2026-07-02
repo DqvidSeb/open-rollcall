@@ -7,6 +7,7 @@
     "mainNav": "Main navigation",
     "home": "Home",
     "people": "People",
+    "attendance": "Attendance",
     "departments": "Departments",
     "positions": "Positions",
     "academicPrograms": "Academic programs",
@@ -92,6 +93,27 @@
     "title": "Attendance",
     "emptyTitle": "No attendance records",
     "emptyDescription": "Attendance records will appear here after a session starts.",
+    "pagination": "Page {page} of {total} · {count} records",
+    "colName": "Name",
+    "colType": "Type",
+    "colCode": "Code",
+    "colGroup": "Department / Program",
+    "colEvent": "Event",
+    "colMethod": "Method",
+    "colTime": "Date & time",
+    "type": {
+      "employee": "Employee",
+      "student": "Student"
+    },
+    "eventType": {
+      "check_in": "Check-in",
+      "check_out": "Check-out"
+    },
+    "method": {
+      "face_recognition": "Face recognition",
+      "manual": "Manual",
+      "override": "Override"
+    },
     "status": {
       "present": "Present",
       "absent": "Absent",

@@ -178,3 +178,53 @@ class AttendanceService:
         total = await self.att_repo.count_by_person(
             person_id, date_from=date_from, date_to=date_to)
         return items, total
+
+    def _to_read(self, att: AttendanceLog) -> "AttendanceRead":
+        from app.schemas.attendance import AttendanceRead
+        from app.services.face_service import _person_type_and_code
+
+        data: dict = {
+            "id": att.id,
+            "event_type": att.event_type,
+            "method": att.method,
+            "event_time": att.event_time,
+            "confidence": att.confidence,
+            "notes": att.notes,
+            "person_id": att.person_id,
+        }
+
+        person = att.person
+        if person is not None:
+            person_type, code = _person_type_and_code(person)
+            data.update(
+                person_type=person_type,
+                code=code,
+                full_name=person.full_name,
+                first_name=person.first_name,
+                last_name=person.last_name,
+                email=person.email,
+                phone=person.phone,
+            )
+            if person.employee is not None:
+                emp = person.employee
+                data.update(
+                    department=emp.department.name if emp.department else None,
+                    position=emp.position.name if emp.position else None,
+                    status=emp.status.value,
+                    hire_date=emp.hire_date.isoformat() if emp.hire_date else None,
+                )
+            if person.student is not None:
+                stu = person.student
+                data.update(
+                    academic_program=stu.academic_program.name if stu.academic_program else None,
+                    grade_level=stu.grade_level,
+                    enrollment_date=stu.enrollment_date.isoformat() if stu.enrollment_date else None,
+                    status=stu.status.value,
+                )
+
+        return AttendanceRead(**data)
+
+    async def list_all(self, *, offset: int = 0, limit: int = 50):
+        items = await self.att_repo.list_all(offset=offset, limit=limit)
+        total = await self.att_repo.count_all()
+        return [self._to_read(a) for a in items], total

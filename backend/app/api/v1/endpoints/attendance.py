@@ -19,6 +19,30 @@ from app.services.attendance_service import AttendanceService
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 
+@router.get(
+    "",
+    response_model=PaginatedAttendance,
+    summary="Listar registros de asistencia",
+)
+async def list_attendance(
+    db: DbSession,
+    _: CurrentUserId,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+) -> PaginatedAttendance:
+    offset = (page - 1) * page_size
+    service = AttendanceService(db)
+    items, total = await service.list_all(offset=offset, limit=page_size)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return PaginatedAttendance(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
+
+
 @router.post(
     "/manual",
     response_model=AttendanceRead,

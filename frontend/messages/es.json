@@ -7,6 +7,7 @@
     "mainNav": "Navegación principal",
     "home": "Inicio",
     "people": "Personas",
+    "attendance": "Asistencia",
     "departments": "Departamentos",
     "positions": "Posiciones",
     "academicPrograms": "Programas académicos",
@@ -92,6 +93,27 @@
     "title": "Asistencia",
     "emptyTitle": "Sin registros de asistencia",
     "emptyDescription": "Los registros aparecerán aquí cuando inicie una sesión.",
+    "pagination": "Página {page} de {total} · {count} registros",
+    "colName": "Nombre",
+    "colType": "Tipo",
+    "colCode": "Código",
+    "colGroup": "Departamento / Programa",
+    "colEvent": "Evento",
+    "colMethod": "Método",
+    "colTime": "Fecha y hora",
+    "type": {
+      "employee": "Empleado",
+      "student": "Estudiante"
+    },
+    "eventType": {
+      "check_in": "Entrada",
+      "check_out": "Salida"
+    },
+    "method": {
+      "face_recognition": "Reconocimiento facial",
+      "manual": "Manual",
+      "override": "Anulación"
+    },
     "status": {
       "present": "Presente",
       "absent": "Ausente",

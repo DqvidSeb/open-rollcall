@@ -1,17 +1,17 @@
 import { getTranslations } from 'next-intl/server';
-import { PageWrapper } from '@/components/layout/PageWrapper/PageWrapper';
+import { AttendancePageContent } from '@/features/attendance-logs/components/AttendancePageContent';
 
 export async function generateMetadata() {
   const t = await getTranslations('Attendance');
   return { title: t('title') };
 }
 
-export default async function AttendancePage() {
-  const t = await getTranslations('Attendance');
-
-  return (
-    <PageWrapper title={t('title')}>
-      {/* AttendanceTable, AttendanceFilters — to be implemented */}
-    </PageWrapper>
-  );
+/**
+ * Attendance page.
+ *
+ * Mirrors the Persons page layout — toolbar + table sit directly
+ * on the page surface, no card wrappers or extra backgrounds.
+ */
+export default function AttendancePage() {
+  return <AttendancePageContent />;
 }

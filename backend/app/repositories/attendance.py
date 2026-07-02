@@ -3,7 +3,11 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from sqlalchemy import and_, cast, Date, select
+from sqlalchemy.orm import joinedload
 from app.models.attendance_log import AttendanceLog, EventType
+from app.models.employee import Employee
+from app.models.person import Person
+from app.models.student import Student
 from app.repositories.base import BaseRepository
 
 
@@ -46,3 +50,22 @@ class AttendanceRepository(BaseRepository[AttendanceLog]):
     async def list_by_date(self, target_date: date, *, offset: int = 0, limit: int = 500) -> list[AttendanceLog]:
         return await self.list(offset=offset, limit=limit,
                                filters=[cast(AttendanceLog.event_time, Date) == target_date])
+
+    async def list_all(self, *, offset: int = 0, limit: int = 50) -> list[AttendanceLog]:
+        """Lista todos los registros de asistencia, mas recientes primero,
+        con la persona y sus datos de especializacion precargados."""
+        result = await self.db.execute(
+            select(AttendanceLog)
+            .options(
+                joinedload(AttendanceLog.person).joinedload(Person.employee).joinedload(Employee.department),
+                joinedload(AttendanceLog.person).joinedload(Person.employee).joinedload(Employee.position),
+                joinedload(AttendanceLog.person).joinedload(Person.student).joinedload(Student.academic_program),
+            )
+            .order_by(AttendanceLog.event_time.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.unique().scalars().all())
+
+    async def count_all(self) -> int:
+        return await self.count()
